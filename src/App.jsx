@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, DollarSign, Calculator, Wallet, Users, ChevronRight, Download, Cloud, CloudOff, Loader2, Archive, History, ArrowLeft, Calendar, Building2 } from 'lucide-react';
+import { Plus, Trash2, DollarSign, Calculator, Wallet, Users, ChevronRight, Download, Cloud, CloudOff, Loader2, Archive, History, ArrowLeft, Calendar, Building2, MinusCircle, ReceiptText } from 'lucide-react';
 
 // --- 1. CONFIGURACIÓN REAL DE FIREBASE ---
 import { initializeApp } from 'firebase/app';
@@ -41,6 +41,13 @@ export default function App() {
   const [mostrarModalCierre, setMostrarModalCierre] = useState(false);
   const [nombreCierre, setNombreCierre] = useState('');
 
+  // NUEVOS ESTADOS PARA DEDUCCIONES
+  const [deducciones, setDeducciones] = useState([]);
+  const [mostrarModalDeduccion, setMostrarModalDeduccion] = useState(false);
+  const [bancoDeduccion, setBancoDeduccion] = useState('');
+  const [formDeduccion, setFormDeduccion] = useState({ descripcion: '', monto: '' });
+  const [subVistaHistorial, setSubVistaHistorial] = useState('cierres');
+
   const [user, setUser] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [estadoGuardado, setEstadoGuardado] = useState('sincronizado');
@@ -67,7 +74,7 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     
-    // Ruta en tu base de datos de Firebase
+    // Ruta en tu base de datos de Firebase (AHORA COMPARTIDA PARA TODOS LOS DISPOSITIVOS)
     const docRef = doc(db, 'empresa', 'pagos', 'dashboardData', 'estadoActual');
 
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
@@ -75,6 +82,7 @@ export default function App() {
         const data = docSnap.data();
         setDatos(data.datos || estadoInicial);
         setCierres(data.cierres || []);
+        setDeducciones(data.deducciones || []);
       }
       setCargando(false);
     }, (error) => {
@@ -86,15 +94,17 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
-  const guardarDatosEnNube = async (nuevosDatos, nuevosCierres = cierres) => {
+  const guardarDatosEnNube = async (nuevosDatos = datos, nuevosCierres = cierres, nuevasDeducciones = deducciones) => {
     setDatos(nuevosDatos);
     setCierres(nuevosCierres);
+    setDeducciones(nuevasDeducciones);
     
     if (user) {
       setEstadoGuardado('guardando');
+      // Ruta compartida para que PC y Celular guarden en el mismo lugar
       const docRef = doc(db, 'empresa', 'pagos', 'dashboardData', 'estadoActual');
       try {
-        await setDoc(docRef, { datos: nuevosDatos, cierres: nuevosCierres });
+        await setDoc(docRef, { datos: nuevosDatos, cierres: nuevosCierres, deducciones: nuevasDeducciones });
         setEstadoGuardado('sincronizado');
       } catch (error) {
         console.error("Error guardando:", error);
@@ -132,7 +142,7 @@ export default function App() {
 
   // --- 5. LÓGICA DE CIERRES ---
   const procesarCierre = () => {
-    if (!nombreCierre.trim()) return alert("Por favor ingresa un nombre para el cierre (Ej: Semana 1)");
+    if (!nombreCierre.trim()) return;
 
     let totalVendido = 0;
     let totalCobrado = 0;
@@ -160,6 +170,34 @@ export default function App() {
     setNombreCierre('');
     setMostrarModalCierre(false);
     setVista('historial'); 
+  };
+
+  // --- LÓGICA DE DEDUCCIONES ---
+  const abrirModalDeduccion = (banco) => {
+    setBancoDeduccion(banco);
+    setFormDeduccion({ descripcion: '', monto: '' });
+    setMostrarModalDeduccion(true);
+  };
+
+  const procesarDeduccion = () => {
+    if (!formDeduccion.descripcion.trim() || !formDeduccion.monto) return;
+    
+    const nuevaDeduccion = {
+      id: generarId(),
+      fecha: new Date().toISOString(),
+      banco: bancoDeduccion,
+      descripcion: formDeduccion.descripcion,
+      monto: parseFloat(formDeduccion.monto)
+    };
+
+    const nuevasDeducciones = [nuevaDeduccion, ...deducciones];
+    guardarDatosEnNube(datos, cierres, nuevasDeducciones);
+    setMostrarModalDeduccion(false);
+  };
+
+  const eliminarDeduccion = (id) => {
+    const nuevas = deducciones.filter(d => d.id !== id);
+    guardarDatosEnNube(datos, cierres, nuevas);
   };
 
   // --- 6. EXPORTACIÓN A EXCEL NATIVO (.XLS) ---
@@ -284,20 +322,39 @@ export default function App() {
   const renderTablas = (datosAUsar, esSoloLectura = false) => {
     const registrosActuales = datosAUsar[pestanaActiva] || [];
 
+    // Resumen individual (por pestaña activa)
     const resumen = registrosActuales.reduce((acc, curr) => {
       const calc = calcularValores(curr);
       acc.totalVendidoUSD += (parseFloat(curr.totalUSD) || 0);
-      acc.totalCobradoBs += calc.totalBs;
-      acc.porCobrarUSD += calc.saldoUSD;
+      acc.totalVendidoBs += calc.totalBs;
       
-      acc.banescoBs += (calc.sueldoBs + calc.duenasTotalBs);
-      acc.banescoSueldoBs += calc.sueldoBs;
-      acc.banescoDuenasBs += calc.duenasTotalBs;
-      acc.tesoroBs += calc.adelantoBs;
-      acc.provincialBs += calc.ahorroBs;
+      acc.porCobrarUSD += calc.saldoUSD;
+      acc.porCobrarBs += calc.restanteBs;
+      
+      acc.totalRecibidoBs += calc.adelantoBs;
       
       return acc;
-    }, { totalVendidoUSD: 0, totalCobradoBs: 0, porCobrarUSD: 0, banescoBs: 0, banescoSueldoBs: 0, banescoDuenasBs: 0, tesoroBs: 0, provincialBs: 0 });
+    }, { totalVendidoUSD: 0, totalVendidoBs: 0, porCobrarUSD: 0, porCobrarBs: 0, totalRecibidoBs: 0 });
+
+    // Resumen GLOBAL para los bancos (todas las pestañas)
+    const resumenGlobal = Object.values(datosAUsar).flat().reduce((acc, curr) => {
+      const calc = calcularValores(curr);
+      acc.banescoSueldoBs += calc.sueldoBs;
+      acc.banescoDuenasBs += calc.duenasTotalBs;
+      acc.banescoBs += (calc.sueldoBs + calc.duenasTotalBs);
+      acc.tesoroBs += calc.adelantoBs;
+      acc.provincialBs += calc.ahorroBs;
+      return acc;
+    }, { banescoBs: 0, banescoSueldoBs: 0, banescoDuenasBs: 0, tesoroBs: 0, provincialBs: 0 });
+
+    // Restar deducciones solo si no es modo lectura
+    if (!esSoloLectura) {
+      deducciones.forEach(d => {
+        if (d.banco === 'Banesco') resumenGlobal.banescoBs -= d.monto;
+        if (d.banco === 'Banco del Tesoro') resumenGlobal.tesoroBs -= d.monto;
+        if (d.banco === 'Provincial') resumenGlobal.provincialBs -= d.monto;
+      });
+    }
 
     return (
       <>
@@ -306,22 +363,28 @@ export default function App() {
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 transition-transform hover:-translate-y-1">
             <div className="p-3 bg-blue-100 text-blue-600 rounded-lg"><DollarSign className="w-6 h-6" /></div>
             <div>
-              <p className="text-sm font-medium text-gray-500">Total Vendido (USD) - {pestanaActiva}</p>
-              <p className="text-2xl font-bold text-gray-800">{formatoUSD(resumen.totalVendidoUSD)}</p>
+              <p className="text-sm font-medium text-gray-500">Total Vendido - {pestanaActiva}</p>
+              <div className="flex items-baseline gap-2">
+                <p className="text-2xl font-bold text-gray-800">{formatoUSD(resumen.totalVendidoUSD)}</p>
+                <p className="text-sm font-medium text-gray-500">({formatoBs(resumen.totalVendidoBs)})</p>
+              </div>
             </div>
           </div>
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 transition-transform hover:-translate-y-1">
             <div className="p-3 bg-orange-100 text-orange-600 rounded-lg"><Users className="w-6 h-6" /></div>
             <div>
-              <p className="text-sm font-medium text-gray-500">Por Cobrar (USD) - {pestanaActiva}</p>
-              <p className="text-2xl font-bold text-gray-800">{formatoUSD(resumen.porCobrarUSD)}</p>
+              <p className="text-sm font-medium text-gray-500">Por Cobrar - {pestanaActiva}</p>
+              <div className="flex items-baseline gap-2">
+                <p className="text-2xl font-bold text-gray-800">{formatoUSD(resumen.porCobrarUSD)}</p>
+                <p className="text-sm font-medium text-gray-500">({formatoBs(resumen.porCobrarBs)})</p>
+              </div>
             </div>
           </div>
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 transition-transform hover:-translate-y-1">
             <div className="p-3 bg-green-100 text-green-600 rounded-lg"><Wallet className="w-6 h-6" /></div>
             <div>
               <p className="text-sm font-medium text-gray-500">Total Recibido (Bs) - {pestanaActiva}</p>
-              <p className="text-2xl font-bold text-gray-800">{formatoBs(resumen.totalCobradoBs)}</p>
+              <p className="text-2xl font-bold text-gray-800">{formatoBs(resumen.totalRecibidoBs)}</p>
             </div>
           </div>
         </div>
@@ -332,37 +395,46 @@ export default function App() {
             <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-teal-500"></div>
             <div className="p-3 bg-teal-50 text-teal-600 rounded-lg shrink-0"><Building2 className="w-5 h-5" /></div>
             <div className="w-full">
-              <p className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Banesco</p>
+              <div className="flex justify-between items-start mb-2">
+                <p className="text-xs font-bold uppercase tracking-wider text-gray-500 flex items-center gap-1">Banesco <span className="bg-gray-100 text-gray-400 px-1 rounded normal-case text-[9px]">Global</span></p>
+                {!esSoloLectura && <button onClick={() => abrirModalDeduccion('Banesco')} className="text-[10px] font-bold flex items-center gap-1 text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 px-2 py-1 rounded transition-colors"><MinusCircle className="w-3 h-3"/> Deducir</button>}
+              </div>
               <div className="flex justify-between items-center mb-1">
                 <span className="text-xs text-gray-500">Sueldo:</span>
-                <span className="text-sm font-bold text-gray-800">{formatoBs(resumen.banescoSueldoBs)}</span>
+                <span className="text-sm font-bold text-gray-800">{formatoBs(resumenGlobal.banescoSueldoBs)}</span>
               </div>
               <div className="flex justify-between items-center mb-2">
                 <span className="text-xs text-gray-500">Dueñas:</span>
-                <span className="text-sm font-bold text-gray-800">{formatoBs(resumen.banescoDuenasBs)}</span>
+                <span className="text-sm font-bold text-gray-800">{formatoBs(resumenGlobal.banescoDuenasBs)}</span>
               </div>
               <div className="pt-2 border-t border-gray-100 flex justify-between items-center">
-                <span className="text-xs font-bold text-teal-600">Total:</span>
-                <span className="text-sm font-bold text-teal-700">{formatoBs(resumen.banescoBs)}</span>
+                <span className="text-xs font-bold text-teal-600">Total Disponible:</span>
+                <span className="text-sm font-bold text-teal-700">{formatoBs(resumenGlobal.banescoBs)}</span>
               </div>
             </div>
           </div>
           <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex items-start gap-4 transition-transform hover:-translate-y-1 relative overflow-hidden h-full">
             <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-cyan-500"></div>
             <div className="p-3 bg-cyan-50 text-cyan-600 rounded-lg shrink-0"><Building2 className="w-5 h-5" /></div>
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Banco del Tesoro</p>
+            <div className="w-full">
+              <div className="flex justify-between items-start mb-2">
+                <p className="text-xs font-bold uppercase tracking-wider text-gray-500 flex items-center gap-1">Banco del Tesoro <span className="bg-gray-100 text-gray-400 px-1 rounded normal-case text-[9px]">Global</span></p>
+                {!esSoloLectura && <button onClick={() => abrirModalDeduccion('Banco del Tesoro')} className="text-[10px] font-bold flex items-center gap-1 text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 px-2 py-1 rounded transition-colors"><MinusCircle className="w-3 h-3"/> Deducir</button>}
+              </div>
               <p className="text-xs text-gray-500 mb-1">Reinversiones</p>
-              <p className="text-lg font-bold text-gray-800">{formatoBs(resumen.tesoroBs)}</p>
+              <p className="text-lg font-bold text-gray-800">{formatoBs(resumenGlobal.tesoroBs)}</p>
             </div>
           </div>
           <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex items-start gap-4 transition-transform hover:-translate-y-1 relative overflow-hidden h-full">
             <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-indigo-500"></div>
             <div className="p-3 bg-indigo-50 text-indigo-600 rounded-lg shrink-0"><Building2 className="w-5 h-5" /></div>
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-2">Provincial</p>
+            <div className="w-full">
+              <div className="flex justify-between items-start mb-2">
+                <p className="text-xs font-bold uppercase tracking-wider text-gray-500 flex items-center gap-1">Provincial <span className="bg-gray-100 text-gray-400 px-1 rounded normal-case text-[9px]">Global</span></p>
+                {!esSoloLectura && <button onClick={() => abrirModalDeduccion('Provincial')} className="text-[10px] font-bold flex items-center gap-1 text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 px-2 py-1 rounded transition-colors"><MinusCircle className="w-3 h-3"/> Deducir</button>}
+              </div>
               <p className="text-xs text-gray-500 mb-1">Ahorros</p>
-              <p className="text-lg font-bold text-gray-800">{formatoBs(resumen.provincialBs)}</p>
+              <p className="text-lg font-bold text-gray-800">{formatoBs(resumenGlobal.provincialBs)}</p>
             </div>
           </div>
         </div>
@@ -533,7 +605,7 @@ export default function App() {
                 onClick={() => setVista('historial')}
                 className={`px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-1 ${vista === 'historial' || vista === 'detalleCierre' ? 'bg-slate-900 text-white' : 'text-slate-300 hover:bg-slate-700 hover:text-white'}`}
               >
-                <History className="w-4 h-4" /> Historial de Cierres
+                <History className="w-4 h-4" /> Historial
               </button>
             </div>
           </div>
@@ -567,59 +639,118 @@ export default function App() {
           </>
         )}
 
-        {/* --- VISTA: HISTORIAL DE CIERRES --- */}
+        {/* --- VISTA: HISTORIAL DE CIERRES Y DEDUCCIONES --- */}
         {vista === 'historial' && (
           <div>
-            <header className="mb-8">
+            <header className="mb-6">
               <h1 className="text-3xl font-bold text-slate-800 flex items-center gap-2">
                 <Archive className="w-8 h-8 text-indigo-600" />
-                Historial de Cierres
+                Historial
               </h1>
-              <p className="text-slate-500 mt-1">Revisa la información guardada de semanas anteriores.</p>
+              <p className="text-slate-500 mt-1">Revisa la información guardada y deducciones.</p>
+              
+              <div className="flex gap-4 mt-6 border-b border-gray-200">
+                <button 
+                  onClick={() => setSubVistaHistorial('cierres')}
+                  className={`pb-3 px-2 text-sm font-semibold transition-colors ${subVistaHistorial === 'cierres' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  Historial de Cierres
+                </button>
+                <button 
+                  onClick={() => setSubVistaHistorial('deducciones')}
+                  className={`pb-3 px-2 text-sm font-semibold transition-colors ${subVistaHistorial === 'deducciones' ? 'text-indigo-600 border-b-2 border-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                  Historial de Deducciones
+                </button>
+              </div>
             </header>
 
-            {cierres.length === 0 ? (
-              <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">
-                <History className="w-12 h-12 mx-auto text-gray-300 mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-1">No hay cierres guardados</h3>
-                <p>Ve al Panel de Trabajo y haz clic en "Realizar Cierre" para guardar tu primera semana.</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {cierres.map(cierre => (
-                  <div key={cierre.id} className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
-                    <div className="bg-indigo-50 border-b border-indigo-100 p-4">
-                      <h3 className="text-lg font-bold text-indigo-900 flex items-center justify-between">
-                        {cierre.nombre}
-                        <Calendar className="w-5 h-5 text-indigo-400" />
-                      </h3>
-                      <p className="text-xs text-indigo-600 mt-1">
-                        Cerrado el: {new Date(cierre.fecha).toLocaleDateString('es-VE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                      </p>
-                    </div>
-                    <div className="p-4 space-y-3">
-                      <div className="flex justify-between items-center text-sm">
-                        <span className="text-gray-500">Ventas (USD):</span>
-                        <span className="font-bold text-gray-800">{formatoUSD(cierre.resumen.totalVendido)}</span>
-                      </div>
-                      <div className="flex justify-between items-center text-sm">
-                        <span className="text-gray-500">Recibido (Bs):</span>
-                        <span className="font-bold text-emerald-600">{formatoBs(cierre.resumen.totalCobrado)}</span>
-                      </div>
-                    </div>
-                    <div className="bg-gray-50 p-4 border-t border-gray-100 flex gap-2">
-                      <button 
-                        onClick={() => {
-                          setCierreSeleccionado(cierre);
-                          setVista('detalleCierre');
-                        }}
-                        className="flex-1 bg-indigo-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
-                      >
-                        Ver Detalle Completo
-                      </button>
-                    </div>
+            {subVistaHistorial === 'cierres' && (
+              <>
+                {cierres.length === 0 ? (
+                  <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">
+                    <History className="w-12 h-12 mx-auto text-gray-300 mb-4" />
+                    <h3 className="text-lg font-medium text-gray-900 mb-1">No hay cierres guardados</h3>
+                    <p>Ve al Panel de Trabajo y haz clic en "Realizar Cierre" para guardar tu primera semana.</p>
                   </div>
-                ))}
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {cierres.map(cierre => (
+                      <div key={cierre.id} className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
+                        <div className="bg-indigo-50 border-b border-indigo-100 p-4">
+                          <h3 className="text-lg font-bold text-indigo-900 flex items-center justify-between">
+                            {cierre.nombre}
+                            <Calendar className="w-5 h-5 text-indigo-400" />
+                          </h3>
+                          <p className="text-xs text-indigo-600 mt-1">
+                            Cerrado el: {new Date(cierre.fecha).toLocaleDateString('es-VE', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                          </p>
+                        </div>
+                        <div className="p-4 space-y-3">
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-gray-500">Ventas (USD):</span>
+                            <span className="font-bold text-gray-800">{formatoUSD(cierre.resumen.totalVendido)}</span>
+                          </div>
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-gray-500">Recibido (Bs):</span>
+                            <span className="font-bold text-emerald-600">{formatoBs(cierre.resumen.totalCobrado)}</span>
+                          </div>
+                        </div>
+                        <div className="bg-gray-50 p-4 border-t border-gray-100 flex gap-2">
+                          <button 
+                            onClick={() => {
+                              setCierreSeleccionado(cierre);
+                              setVista('detalleCierre');
+                            }}
+                            className="flex-1 bg-indigo-600 text-white py-2 rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors"
+                          >
+                            Ver Detalle Completo
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
+            {subVistaHistorial === 'deducciones' && (
+              <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div className="p-4 bg-slate-800 text-white flex justify-between items-center">
+                  <h2 className="text-lg font-semibold flex items-center gap-2">
+                    <ReceiptText className="w-5 h-5 text-red-400" />
+                    Registro de Deducciones
+                  </h2>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm text-left">
+                    <thead className="bg-gray-50 text-gray-500 uppercase text-xs border-b">
+                      <tr>
+                        <th className="px-4 py-3">Fecha</th>
+                        <th className="px-4 py-3">Banco</th>
+                        <th className="px-4 py-3">Descripción</th>
+                        <th className="px-4 py-3 text-right">Monto (Bs)</th>
+                        <th className="px-4 py-3 text-center">Acción</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {deducciones.map(d => (
+                        <tr key={d.id} className="border-b hover:bg-gray-50">
+                          <td className="px-4 py-3 text-gray-600">{new Date(d.fecha).toLocaleDateString('es-VE')}</td>
+                          <td className="px-4 py-3 font-semibold text-gray-800">{d.banco}</td>
+                          <td className="px-4 py-3 text-gray-700">{d.descripcion}</td>
+                          <td className="px-4 py-3 text-right text-red-600 font-bold">- {formatoBs(d.monto)}</td>
+                          <td className="px-4 py-3 text-center">
+                            <button onClick={() => eliminarDeduccion(d.id)} className="text-red-400 hover:text-red-600 p-1 rounded hover:bg-red-50"><Trash2 className="w-4 h-4 mx-auto"/></button>
+                          </td>
+                        </tr>
+                      ))}
+                      {deducciones.length === 0 && (
+                        <tr><td colSpan="5" className="text-center py-8 text-gray-500">No hay deducciones registradas.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>
@@ -684,6 +815,63 @@ export default function App() {
                 className="px-6 py-2 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-colors shadow-sm"
               >
                 Confirmar y Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL PARA AÑADIR DEDUCCIÓN --- */}
+      {mostrarModalDeduccion && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center gap-3 text-red-600 mb-4">
+              <MinusCircle className="w-8 h-8" />
+              <h2 className="text-2xl font-bold">Añadir Deducción</h2>
+            </div>
+            <p className="text-gray-600 mb-4 text-sm">
+              Registra un gasto o deducción de la cuenta de <strong>{bancoDeduccion}</strong>.
+            </p>
+            
+            <div className="space-y-4 mb-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Descripción de la Deducción</label>
+                <input 
+                  type="text" 
+                  autoFocus
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none"
+                  placeholder="Ej: Pago de comisiones, Mantenimiento..."
+                  value={formDeduccion.descripcion}
+                  onChange={(e) => setFormDeduccion({...formDeduccion, descripcion: e.target.value})}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Monto (Bs)</label>
+                <input 
+                  type="number" 
+                  min="0"
+                  step="any"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none"
+                  placeholder="0.00"
+                  value={formDeduccion.monto}
+                  onChange={(e) => setFormDeduccion({...formDeduccion, monto: e.target.value})}
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button 
+                onClick={() => setMostrarModalDeduccion(false)}
+                className="px-4 py-2 text-gray-600 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={procesarDeduccion}
+                disabled={!formDeduccion.descripcion || !formDeduccion.monto}
+                className="px-6 py-2 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-colors shadow-sm disabled:opacity-50"
+              >
+                Guardar Deducción
               </button>
             </div>
           </div>
