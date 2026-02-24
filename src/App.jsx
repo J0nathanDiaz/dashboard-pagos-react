@@ -68,7 +68,7 @@ export default function App() {
     if (!user) return;
     
     // Ruta en tu base de datos de Firebase
-    const docRef = doc(db, 'usuarios', user.uid, 'dashboardData', 'estadoActual');
+    const docRef = doc(db, 'empresa', 'pagos', 'dashboardData', 'estadoActual');
 
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
       if (docSnap.exists()) {
@@ -92,7 +92,7 @@ export default function App() {
     
     if (user) {
       setEstadoGuardado('guardando');
-      const docRef = doc(db, 'usuarios', user.uid, 'dashboardData', 'estadoActual');
+      const docRef = doc(db, 'empresa', 'pagos', 'dashboardData', 'estadoActual');
       try {
         await setDoc(docRef, { datos: nuevosDatos, cierres: nuevosCierres });
         setEstadoGuardado('sincronizado');
