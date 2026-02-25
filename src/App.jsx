@@ -24,7 +24,7 @@ const db = getFirestore(app);
 const appId = "dashboard-pagos-oficial";
 
 const generarId = () => Math.random().toString(36).substr(2, 9);
-const generarFilaVacia = () => ({ id: generarId(), cliente: '', pago1USD: '', pago2USD: '', reinversionUSD: '', tasa1: '', tasa2: '' });
+const generarFilaVacia = () => ({ id: generarId(), cliente: '', pago1USD: '', pago2USD: '', reinversionUSD: '', tasa1: '', tasa2: '', entregado: 'No' });
 
 const estadoInicial = {
   Ambar: [generarFilaVacia()],
@@ -280,7 +280,8 @@ export default function App() {
               <th>Pago 1 (Bs)</th>
               <th>Pago 2 (Bs)</th>
               <th>Total Recibido (Bs)</th>
-              <th>Estatus</th>
+              <th>Estatus Pago</th>
+              <th>Entregado</th>
             </tr>
           </thead>
           <tbody>
@@ -315,6 +316,7 @@ export default function App() {
             <td class="num">${calc.pago2Bs.toFixed(2)}</td>
             <td class="num bold" style="background-color: #ecfdf5;">${calc.totalBs.toFixed(2)}</td>
             <td style="color: ${estaPagadoCompleto ? 'green' : 'orange'}; font-weight: bold;">${estatus}</td>
+            <td style="color: ${fila.entregado === 'Sí' ? 'green' : 'red'}; font-weight: bold;">${fila.entregado || 'No'}</td>
           </tr>
         `;
       });
@@ -564,6 +566,7 @@ export default function App() {
                     <th className="px-4 py-3 bg-purple-50 text-purple-800">C/Dueña (35%)</th>
                     <th className="px-4 py-3">Tasa 1 (Pago 1)</th>
                     <th className="px-4 py-3">Tasa 2 (Pago 2)</th>
+                    <th className="px-4 py-3 text-center">Entregado</th>
                     {!esSoloLectura && <th className="px-4 py-3 text-center">Borrar</th>}
                   </tr>
                 </thead>
@@ -595,6 +598,17 @@ export default function App() {
                         <td className="px-4 py-2">
                           <input type="number" min="0" step="any" disabled={esSoloLectura} className={`w-20 p-2 border border-orange-300 rounded outline-none ${esSoloLectura ? 'bg-transparent border-transparent text-gray-800 font-medium' : 'bg-orange-50 focus:ring-2 focus:ring-orange-500'}`} placeholder="Bs." value={fila.tasa2} onChange={(e) => actualizarRegistro(pestanaActiva, fila.id, 'tasa2', e.target.value)} />
                         </td>
+                        <td className="px-4 py-2 text-center">
+                          <select 
+                            disabled={esSoloLectura}
+                            className={`p-2 border rounded outline-none font-medium text-sm transition-colors ${fila.entregado === 'Sí' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'} ${esSoloLectura ? 'appearance-none' : 'focus:ring-2 focus:ring-indigo-500'}`}
+                            value={fila.entregado || 'No'}
+                            onChange={(e) => actualizarRegistro(pestanaActiva, fila.id, 'entregado', e.target.value)}
+                          >
+                            <option value="No">No</option>
+                            <option value="Sí">Sí</option>
+                          </select>
+                        </td>
                         {!esSoloLectura && (
                           <td className="px-4 py-2 text-center">
                             <button onClick={() => eliminarFila(pestanaActiva, fila.id)} className="text-red-500 hover:text-red-700 p-2 rounded hover:bg-red-50 transition-colors"><Trash2 className="w-5 h-5" /></button>
@@ -604,7 +618,7 @@ export default function App() {
                     );
                   })}
                   {!esSoloLectura && registrosActuales.length === 0 && (
-                    <tr><td colSpan="12" className="text-center py-8 text-gray-500">No hay registros.</td></tr>
+                    <tr><td colSpan="13" className="text-center py-8 text-gray-500">No hay registros.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -634,7 +648,8 @@ export default function App() {
                     <th className="px-4 py-3 bg-blue-50 text-blue-800">Ahorro 10%</th>
                     <th className="px-4 py-3 bg-purple-50 text-purple-800">Dueñas 70%</th>
                     <th className="px-4 py-3 bg-purple-50 text-purple-800">C/Dueña (35%)</th>
-                    <th className="px-4 py-3">Estatus</th>
+                    <th className="px-4 py-3">Estatus Pago</th>
+                    <th className="px-4 py-3 text-center">Entregado</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -663,6 +678,11 @@ export default function App() {
                         <td className="px-4 py-4 bg-purple-50/50 text-purple-700 font-bold">{porDuenaBs > 0 ? formatoBs(porDuenaBs) : '-'}</td>
                         <td className="px-4 py-4">
                           {totalPagadoUSD === 0 ? <span className="text-gray-400 text-xs italic">-</span> : (estaPagadoCompleto ? <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full">Completado</span> : <span className="px-2 py-1 bg-orange-100 text-orange-700 text-xs font-bold rounded-full">Pendiente</span>)}
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          {fila.entregado === 'Sí' 
+                            ? <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full">Sí</span> 
+                            : <span className="px-2 py-1 bg-red-100 text-red-700 text-xs font-bold rounded-full">No</span>}
                         </td>
                       </tr>
                     );
