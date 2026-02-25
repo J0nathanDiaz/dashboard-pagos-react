@@ -6,7 +6,7 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
 
-// ⚠️ PUNTO 4: REEMPLAZA ESTO CON LOS DATOS DE TU CONSOLA DE FIREBASE ⚠️
+// ⚠️ ¡ATENCIÓN! REEMPLAZA ESTO CON LOS DATOS DE TU CONSOLA DE FIREBASE ⚠️
 const firebaseConfig = {
   apiKey: "AIzaSyAceKMiceZ344maEPT_OLJZRMxRwj04t8U",
   authDomain: "dashboard-pagos-5a420.firebaseapp.com",
@@ -24,7 +24,7 @@ const db = getFirestore(app);
 const appId = "dashboard-pagos-oficial";
 
 const generarId = () => Math.random().toString(36).substr(2, 9);
-const generarFilaVacia = () => ({ id: generarId(), cliente: '', totalUSD: '', adelantoUSD: '', tasa1: '', tasa2: '' });
+const generarFilaVacia = () => ({ id: generarId(), cliente: '', pago1USD: '', pago2USD: '', reinversionUSD: '', tasa1: '', tasa2: '' });
 
 const estadoInicial = {
   Ambar: [generarFilaVacia()],
@@ -74,7 +74,7 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     
-    // Ruta en tu base de datos de Firebase (AHORA COMPARTIDA PARA TODOS LOS DISPOSITIVOS)
+    // Ruta COMPARTIDA en tu base de datos de Firebase
     const docRef = doc(db, 'empresa', 'pagos', 'dashboardData', 'estadoActual');
 
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
@@ -101,7 +101,7 @@ export default function App() {
     
     if (user) {
       setEstadoGuardado('guardando');
-      // Ruta compartida para que PC y Celular guarden en el mismo lugar
+      // Ruta COMPARTIDA para que todos guarden en el mismo lugar
       const docRef = doc(db, 'empresa', 'pagos', 'dashboardData', 'estadoActual');
       try {
         await setDoc(docRef, { datos: nuevosDatos, cierres: nuevosCierres, deducciones: nuevasDeducciones });
@@ -142,7 +142,7 @@ export default function App() {
 
   // --- 5. LÓGICA DE CIERRES ---
   const procesarCierre = () => {
-    if (!nombreCierre.trim()) return;
+    if (!nombreCierre.trim()) return alert("Por favor ingresa un nombre para el cierre (Ej: Semana 1)");
 
     let totalVendido = 0;
     let totalCobrado = 0;
@@ -150,7 +150,7 @@ export default function App() {
     Object.keys(datos).forEach(persona => {
       datos[persona].forEach(fila => {
         const calc = calcularValores(fila);
-        totalVendido += (parseFloat(fila.totalUSD) || 0);
+        totalVendido += calc.totalPagadoUSD;
         totalCobrado += calc.totalBs;
       });
     });
@@ -160,13 +160,15 @@ export default function App() {
       fecha: new Date().toISOString(),
       nombre: nombreCierre,
       resumen: { totalVendido, totalCobrado },
-      datosGuardados: JSON.parse(JSON.stringify(datos)) 
+      datosGuardados: JSON.parse(JSON.stringify(datos)),
+      deduccionesGuardadas: JSON.parse(JSON.stringify(deducciones)) 
     };
 
     const nuevosCierres = [nuevoCierre, ...cierres]; 
     const nuevosDatos = estadoInicial; 
+    const nuevasDeducciones = []; 
 
-    guardarDatosEnNube(nuevosDatos, nuevosCierres);
+    guardarDatosEnNube(nuevosDatos, nuevosCierres, nuevasDeducciones);
     setNombreCierre('');
     setMostrarModalCierre(false);
     setVista('historial'); 
@@ -220,7 +222,8 @@ export default function App() {
             <tr>
               <th>Vendedor</th>
               <th>Cliente</th>
-              <th>Precio Total (USD)</th>
+              <th>Pago 1 (USD)</th>
+              <th>Pago 2 (USD)</th>
               <th>Reinversión (USD)</th>
               <th>Valor Bruto/Saldo (USD)</th>
               <th>Sueldo 20% (USD)</th>
@@ -229,8 +232,8 @@ export default function App() {
               <th>C/Dueña (USD)</th>
               <th>Tasa 1</th>
               <th>Tasa 2</th>
-              <th>Pago Reinversión (Bs)</th>
-              <th>Pago Restante (Bs)</th>
+              <th>Pago 1 (Bs)</th>
+              <th>Pago 2 (Bs)</th>
               <th>Total Recibido (Bs)</th>
               <th>Estatus</th>
             </tr>
@@ -240,27 +243,31 @@ export default function App() {
 
     Object.keys(datosAExportar).forEach(persona => {
       datosAExportar[persona].forEach(fila => {
-        if (!fila.cliente && !fila.totalUSD && !fila.adelantoUSD) return;
+        // Validación de fila vacía
+        if (!fila.cliente && !fila.pago1USD && !fila.totalUSD) return;
 
         const calc = calcularValores(fila);
-        const estaPagadoCompleto = calc.saldoUSD === 0 || (calc.saldoUSD > 0 && calc.t2 > 0);
+        const faltaT1 = calc.p1 > 0 && calc.t1 === 0;
+        const faltaT2 = calc.p2 > 0 && calc.t2 === 0;
+        const estaPagadoCompleto = !faltaT1 && !faltaT2 && calc.totalPagadoUSD > 0;
         const estatus = estaPagadoCompleto ? "Completado" : "Pendiente";
         
         tablaHTML += `
           <tr>
             <td class="bold">${persona}</td>
             <td>${fila.cliente || "Sin nombre"}</td>
-            <td class="num">${fila.totalUSD || 0}</td>
-            <td class="num">${fila.adelantoUSD || 0}</td>
-            <td class="num bold" style="background-color: #f3f4f6;">${calc.saldoUSD.toFixed(2)}</td>
+            <td class="num">${calc.p1 || 0}</td>
+            <td class="num">${calc.p2 || 0}</td>
+            <td class="num">${calc.reinv || 0}</td>
+            <td class="num bold" style="background-color: #f3f4f6;">${calc.saldoBaseUSD.toFixed(2)}</td>
             <td class="num text-blue">${calc.sueldo.toFixed(2)}</td>
             <td class="num text-blue">${calc.ahorro.toFixed(2)}</td>
             <td class="num text-purple">${calc.duenasTotal.toFixed(2)}</td>
             <td class="num text-purple bold">${calc.porDuena.toFixed(2)}</td>
-            <td class="num">${fila.tasa1 || 0}</td>
-            <td class="num">${fila.tasa2 || 0}</td>
-            <td class="num">${calc.adelantoBs.toFixed(2)}</td>
-            <td class="num">${calc.restanteBs.toFixed(2)}</td>
+            <td class="num">${calc.t1 || 0}</td>
+            <td class="num">${calc.t2 || 0}</td>
+            <td class="num">${calc.pago1Bs.toFixed(2)}</td>
+            <td class="num">${calc.pago2Bs.toFixed(2)}</td>
             <td class="num bold" style="background-color: #ecfdf5;">${calc.totalBs.toFixed(2)}</td>
             <td style="color: ${estaPagadoCompleto ? 'green' : 'orange'}; font-weight: bold;">${estatus}</td>
           </tr>
@@ -283,27 +290,49 @@ export default function App() {
 
   // --- 7. CÁLCULOS MATEMÁTICOS ---
   const calcularValores = (registro) => {
-    const total = parseFloat(registro.totalUSD) || 0;
-    const adelanto = parseFloat(registro.adelantoUSD) || 0;
+    // Definimos las variables base. 
+    // Usamos compatibilidad hacia atrás por si hay datos viejos guardados como totalUSD o adelantoUSD.
+    const p1 = parseFloat(registro.pago1USD !== undefined ? registro.pago1USD : registro.totalUSD) || 0;
+    const p2 = parseFloat(registro.pago2USD) || 0;
+    const reinv = parseFloat(registro.reinversionUSD !== undefined ? registro.reinversionUSD : registro.adelantoUSD) || 0;
+    
     const t1 = parseFloat(registro.tasa1) || 0;
     const t2 = parseFloat(registro.tasa2) || 0;
 
-    const saldoUSD = Math.max(0, total - adelanto);
-    const sueldo = saldoUSD * 0.20;
-    const ahorro = saldoUSD * 0.10;
-    const duenasTotal = saldoUSD * 0.70;
+    // Suma de los pagos y cálculo del valor base real restando la reinversión
+    const totalPagadoUSD = p1 + p2;
+    const saldoBaseUSD = Math.max(0, totalPagadoUSD - reinv);
+
+    // Los porcentajes aplican sobre el Saldo Base (Total Pagos - Reinversión)
+    const sueldo = saldoBaseUSD * 0.20;
+    const ahorro = saldoBaseUSD * 0.10;
+    const duenasTotal = saldoBaseUSD * 0.70;
     const porDuena = duenasTotal / 2;
 
-    const adelantoBs = adelanto * t1;
-    const restanteBs = t2 > 0 ? saldoUSD * t2 : 0; 
-    const totalBs = adelantoBs + restanteBs;
+    // Conversiones a Bolívares usando sus tasas respectivas e independientes
+    const pago1Bs = p1 * t1;
+    const pago2Bs = p2 * t2;
+    const totalBs = pago1Bs + pago2Bs;
 
-    const sueldoBs = t2 > 0 ? sueldo * t2 : 0;
-    const ahorroBs = t2 > 0 ? ahorro * t2 : 0;
-    const duenasTotalBs = t2 > 0 ? duenasTotal * t2 : 0;
-    const porDuenaBs = t2 > 0 ? porDuena * t2 : 0;
+    // Tasa Promedio Ponderada: Nos permite distribuir los Bolívares totales matemáticamente 
+    // exactos entre el Sueldo, Ahorro, Dueñas y la cuenta de Reinversión.
+    const blendedRate = totalPagadoUSD > 0 ? (totalBs / totalPagadoUSD) : 0;
 
-    return { saldoUSD, sueldo, ahorro, duenasTotal, porDuena, adelantoBs, restanteBs, totalBs, t2, sueldoBs, ahorroBs, duenasTotalBs, porDuenaBs };
+    const reinvBs = reinv * blendedRate;
+    const saldoBaseBs = saldoBaseUSD * blendedRate;
+
+    const sueldoBs = sueldo * blendedRate;
+    const ahorroBs = ahorro * blendedRate;
+    const duenasTotalBs = duenasTotal * blendedRate;
+    const porDuenaBs = porDuena * blendedRate;
+
+    return { 
+      p1, p2, reinv, totalPagadoUSD, saldoBaseUSD, 
+      sueldo, ahorro, duenasTotal, porDuena, 
+      pago1Bs, pago2Bs, totalBs, reinvBs, saldoBaseBs,
+      t1, t2, 
+      sueldoBs, ahorroBs, duenasTotalBs, porDuenaBs 
+    };
   };
 
   const formatoUSD = (valor) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(valor);
@@ -325,16 +354,18 @@ export default function App() {
     // Resumen individual (por pestaña activa)
     const resumen = registrosActuales.reduce((acc, curr) => {
       const calc = calcularValores(curr);
-      acc.totalVendidoUSD += (parseFloat(curr.totalUSD) || 0);
-      acc.totalVendidoBs += calc.totalBs;
+      acc.totalIngresosUSD += calc.totalPagadoUSD;
+      acc.totalIngresosBs += calc.totalBs; 
       
-      acc.porCobrarUSD += calc.saldoUSD;
-      acc.porCobrarBs += calc.restanteBs;
-      
-      acc.totalRecibidoBs += calc.adelantoBs;
-      
+      acc.totalReinvUSD += calc.reinv;
+      acc.totalReinvBs += calc.reinvBs; 
+
+      // Sumamos el sueldo del 20% para el Pago Semanal
+      acc.pagoSemanalUSD += calc.sueldo;
+      acc.pagoSemanalBs += calc.sueldoBs;
+
       return acc;
-    }, { totalVendidoUSD: 0, totalVendidoBs: 0, porCobrarUSD: 0, porCobrarBs: 0, totalRecibidoBs: 0 });
+    }, { totalIngresosUSD: 0, totalIngresosBs: 0, totalReinvUSD: 0, totalReinvBs: 0, pagoSemanalUSD: 0, pagoSemanalBs: 0 });
 
     // Resumen GLOBAL para los bancos (todas las pestañas)
     const resumenGlobal = Object.values(datosAUsar).flat().reduce((acc, curr) => {
@@ -342,12 +373,11 @@ export default function App() {
       acc.banescoSueldoBs += calc.sueldoBs;
       acc.banescoDuenasBs += calc.duenasTotalBs;
       acc.banescoBs += (calc.sueldoBs + calc.duenasTotalBs);
-      acc.tesoroBs += calc.adelantoBs;
+      acc.tesoroBs += calc.reinvBs;
       acc.provincialBs += calc.ahorroBs;
       return acc;
     }, { banescoBs: 0, banescoSueldoBs: 0, banescoDuenasBs: 0, tesoroBs: 0, provincialBs: 0 });
 
-    // Restar deducciones solo si no es modo lectura
     if (!esSoloLectura) {
       deducciones.forEach(d => {
         if (d.banco === 'Banesco') resumenGlobal.banescoBs -= d.monto;
@@ -358,38 +388,41 @@ export default function App() {
 
     return (
       <>
-        {/* Tarjetas de Resumen Principales */}
+        {/* Tarjetas de Resumen Principales (INDIVIDUALES POR PESTAÑA) */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 transition-transform hover:-translate-y-1">
             <div className="p-3 bg-blue-100 text-blue-600 rounded-lg"><DollarSign className="w-6 h-6" /></div>
             <div>
-              <p className="text-sm font-medium text-gray-500">Total Vendido - {pestanaActiva}</p>
-              <div className="flex items-baseline gap-2">
-                <p className="text-2xl font-bold text-gray-800">{formatoUSD(resumen.totalVendidoUSD)}</p>
-                <p className="text-sm font-medium text-gray-500">({formatoBs(resumen.totalVendidoBs)})</p>
+              <p className="text-sm font-medium text-gray-500">Total Ingresos - {pestanaActiva}</p>
+              <div className="flex flex-col">
+                <span className="text-2xl font-bold text-gray-800">{formatoUSD(resumen.totalIngresosUSD)}</span>
+                <span className="text-sm font-medium text-gray-500">({formatoBs(resumen.totalIngresosBs)})</span>
               </div>
             </div>
           </div>
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 transition-transform hover:-translate-y-1">
-            <div className="p-3 bg-orange-100 text-orange-600 rounded-lg"><Users className="w-6 h-6" /></div>
+            <div className="p-3 bg-orange-100 text-orange-600 rounded-lg"><Archive className="w-6 h-6" /></div>
             <div>
-              <p className="text-sm font-medium text-gray-500">Por Cobrar - {pestanaActiva}</p>
-              <div className="flex items-baseline gap-2">
-                <p className="text-2xl font-bold text-gray-800">{formatoUSD(resumen.porCobrarUSD)}</p>
-                <p className="text-sm font-medium text-gray-500">({formatoBs(resumen.porCobrarBs)})</p>
+              <p className="text-sm font-medium text-gray-500">Total Reinversión - {pestanaActiva}</p>
+              <div className="flex flex-col">
+                <span className="text-2xl font-bold text-gray-800">{formatoUSD(resumen.totalReinvUSD)}</span>
+                <span className="text-sm font-medium text-gray-500">({formatoBs(resumen.totalReinvBs)})</span>
               </div>
             </div>
           </div>
           <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center gap-4 transition-transform hover:-translate-y-1">
             <div className="p-3 bg-green-100 text-green-600 rounded-lg"><Wallet className="w-6 h-6" /></div>
             <div>
-              <p className="text-sm font-medium text-gray-500">Total Recibido (Bs) - {pestanaActiva}</p>
-              <p className="text-2xl font-bold text-gray-800">{formatoBs(resumen.totalRecibidoBs)}</p>
+              <p className="text-sm font-medium text-gray-500">Pago Semanal - {pestanaActiva}</p>
+              <div className="flex flex-col">
+                <span className="text-2xl font-bold text-gray-800">{formatoUSD(resumen.pagoSemanalUSD)}</span>
+                <span className="text-sm font-medium text-gray-500">({formatoBs(resumen.pagoSemanalBs)})</span>
+              </div>
             </div>
           </div>
         </div>
 
-        {/* Tarjetas de Bancos */}
+        {/* Tarjetas de Bancos (GLOBALES - SUMAN TODO) */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex items-start gap-4 transition-transform hover:-translate-y-1 relative overflow-hidden h-full">
             <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-teal-500"></div>
@@ -421,7 +454,7 @@ export default function App() {
                 <p className="text-xs font-bold uppercase tracking-wider text-gray-500 flex items-center gap-1">Banco del Tesoro <span className="bg-gray-100 text-gray-400 px-1 rounded normal-case text-[9px]">Global</span></p>
                 {!esSoloLectura && <button onClick={() => abrirModalDeduccion('Banco del Tesoro')} className="text-[10px] font-bold flex items-center gap-1 text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 px-2 py-1 rounded transition-colors"><MinusCircle className="w-3 h-3"/> Deducir</button>}
               </div>
-              <p className="text-xs text-gray-500 mb-1">Reinversiones</p>
+              <p className="text-xs text-gray-500 mb-1">Reinversiones Acumuladas</p>
               <p className="text-lg font-bold text-gray-800">{formatoBs(resumenGlobal.tesoroBs)}</p>
             </div>
           </div>
@@ -476,33 +509,37 @@ export default function App() {
                 <thead className="text-xs text-gray-500 bg-gray-50 uppercase border-b">
                   <tr>
                     <th className="px-4 py-3">Cliente</th>
-                    <th className="px-4 py-3">Precio Total ($)</th>
-                    <th className="px-4 py-3">Reinversión ($)</th>
+                    <th className="px-4 py-3">Pago 1 ($)</th>
+                    <th className="px-4 py-3">Pago 2 ($)</th>
+                    <th className="px-4 py-3 bg-red-50 text-red-800">Reinversión ($)</th>
                     <th className="px-4 py-3 bg-indigo-50 text-indigo-800">Valor Bruto / Saldo ($)</th>
                     <th className="px-4 py-3 bg-blue-50 text-blue-800">Sueldo 20%</th>
                     <th className="px-4 py-3 bg-blue-50 text-blue-800">Ahorro 10%</th>
                     <th className="px-4 py-3 bg-purple-50 text-purple-800">Dueñas 70%</th>
                     <th className="px-4 py-3 bg-purple-50 text-purple-800">C/Dueña (35%)</th>
-                    <th className="px-4 py-3">Tasa 1 (Reinv.)</th>
-                    <th className="px-4 py-3">Tasa 2 (Restante)</th>
+                    <th className="px-4 py-3">Tasa 1 (Pago 1)</th>
+                    <th className="px-4 py-3">Tasa 2 (Pago 2)</th>
                     {!esSoloLectura && <th className="px-4 py-3 text-center">Borrar</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {registrosActuales.map((fila) => {
-                    const { saldoUSD, sueldo, ahorro, duenasTotal, porDuena } = calcularValores(fila);
+                    const { saldoBaseUSD, sueldo, ahorro, duenasTotal, porDuena } = calcularValores(fila);
                     return (
                       <tr key={fila.id} className="border-b hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-2">
                           <input type="text" disabled={esSoloLectura} className={`w-full p-2 border border-gray-300 rounded outline-none ${esSoloLectura ? 'bg-transparent border-transparent' : 'focus:ring-2 focus:ring-indigo-500'}`} placeholder="Nombre..." value={fila.cliente} onChange={(e) => actualizarRegistro(pestanaActiva, fila.id, 'cliente', e.target.value)} />
                         </td>
                         <td className="px-4 py-2">
-                          <input type="number" min="0" step="any" disabled={esSoloLectura} className={`w-20 p-2 border border-gray-300 rounded outline-none ${esSoloLectura ? 'bg-transparent border-transparent' : 'focus:ring-2 focus:ring-indigo-500'}`} placeholder="0" value={fila.totalUSD} onChange={(e) => actualizarRegistro(pestanaActiva, fila.id, 'totalUSD', e.target.value)} />
+                          <input type="number" min="0" step="any" disabled={esSoloLectura} className={`w-20 p-2 border border-gray-300 rounded outline-none ${esSoloLectura ? 'bg-transparent border-transparent' : 'focus:ring-2 focus:ring-indigo-500'}`} placeholder="0" value={fila.pago1USD !== undefined ? fila.pago1USD : (fila.totalUSD || '')} onChange={(e) => actualizarRegistro(pestanaActiva, fila.id, 'pago1USD', e.target.value)} />
                         </td>
                         <td className="px-4 py-2">
-                          <input type="number" min="0" step="any" disabled={esSoloLectura} className={`w-20 p-2 border border-gray-300 rounded outline-none ${esSoloLectura ? 'bg-transparent border-transparent' : 'focus:ring-2 focus:ring-indigo-500'}`} placeholder="0" value={fila.adelantoUSD} onChange={(e) => actualizarRegistro(pestanaActiva, fila.id, 'adelantoUSD', e.target.value)} />
+                          <input type="number" min="0" step="any" disabled={esSoloLectura} className={`w-20 p-2 border border-gray-300 rounded outline-none ${esSoloLectura ? 'bg-transparent border-transparent' : 'focus:ring-2 focus:ring-indigo-500'}`} placeholder="0" value={fila.pago2USD || ''} onChange={(e) => actualizarRegistro(pestanaActiva, fila.id, 'pago2USD', e.target.value)} />
                         </td>
-                        <td className="px-4 py-2 bg-indigo-50 font-bold text-indigo-700">{formatoUSD(saldoUSD)}</td>
+                        <td className="px-4 py-2">
+                          <input type="number" min="0" step="any" disabled={esSoloLectura} className={`w-20 p-2 border border-red-300 rounded outline-none bg-red-50 ${esSoloLectura ? 'bg-transparent border-transparent' : 'focus:ring-2 focus:ring-red-500'}`} placeholder="0" value={fila.reinversionUSD !== undefined ? fila.reinversionUSD : (fila.adelantoUSD || '')} onChange={(e) => actualizarRegistro(pestanaActiva, fila.id, 'reinversionUSD', e.target.value)} />
+                        </td>
+                        <td className="px-4 py-2 bg-indigo-50 font-bold text-indigo-700">{formatoUSD(saldoBaseUSD)}</td>
                         <td className="px-4 py-2 bg-blue-50/50 text-blue-700 font-medium">{formatoUSD(sueldo)}</td>
                         <td className="px-4 py-2 bg-blue-50/50 text-blue-700 font-medium">{formatoUSD(ahorro)}</td>
                         <td className="px-4 py-2 bg-purple-50/50 text-purple-700 font-medium">{formatoUSD(duenasTotal)}</td>
@@ -522,7 +559,7 @@ export default function App() {
                     );
                   })}
                   {!esSoloLectura && registrosActuales.length === 0 && (
-                    <tr><td colSpan="11" className="text-center py-8 text-gray-500">No hay registros.</td></tr>
+                    <tr><td colSpan="12" className="text-center py-8 text-gray-500">No hay registros.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -543,9 +580,11 @@ export default function App() {
                 <thead className="text-xs text-gray-500 bg-gray-50 uppercase border-b">
                   <tr>
                     <th className="px-4 py-3">Cliente</th>
-                    <th className="px-4 py-3 font-bold text-gray-800">Precio Total (Bs)</th>
-                    <th className="px-4 py-3">Reinversión (Bs)</th>
-                    <th className="px-4 py-3 bg-emerald-50 text-emerald-800">Valor Bruto / Saldo (Bs)</th>
+                    <th className="px-4 py-3">Pago 1 (Bs)</th>
+                    <th className="px-4 py-3">Pago 2 (Bs)</th>
+                    <th className="px-4 py-3 font-bold text-gray-800">Total Recibido (Bs)</th>
+                    <th className="px-4 py-3 bg-red-50 text-red-800">Reinversión (Bs)</th>
+                    <th className="px-4 py-3 bg-emerald-50 text-emerald-800">Valor Bruto (Bs)</th>
                     <th className="px-4 py-3 bg-blue-50 text-blue-800">Sueldo 20%</th>
                     <th className="px-4 py-3 bg-blue-50 text-blue-800">Ahorro 10%</th>
                     <th className="px-4 py-3 bg-purple-50 text-purple-800">Dueñas 70%</th>
@@ -555,21 +594,30 @@ export default function App() {
                 </thead>
                 <tbody>
                   {registrosActuales.map((fila) => {
-                    const { adelantoBs, restanteBs, totalBs, t2, saldoUSD, sueldoBs, ahorroBs, duenasTotalBs, porDuenaBs } = calcularValores(fila);
-                    const estaPagadoCompleto = saldoUSD === 0 || (saldoUSD > 0 && t2 > 0);
+                    const { p1, p2, pago1Bs, pago2Bs, totalBs, reinvBs, saldoBaseBs, t1, t2, sueldoBs, ahorroBs, duenasTotalBs, porDuenaBs, totalPagadoUSD } = calcularValores(fila);
+                    
+                    const faltaT1 = p1 > 0 && t1 === 0;
+                    const faltaT2 = p2 > 0 && t2 === 0;
+                    const estaPagadoCompleto = !faltaT1 && !faltaT2 && totalPagadoUSD > 0;
                     
                     return (
                       <tr key={`bs-${fila.id}`} className="border-b bg-white hover:bg-emerald-50/30 transition-colors">
                         <td className="px-4 py-4 font-medium text-gray-700">{fila.cliente || <span className="text-gray-400 italic">Sin nombre</span>}</td>
+                        <td className="px-4 py-4 text-gray-600">
+                          {pago1Bs > 0 ? formatoBs(pago1Bs) : (p1 > 0 && t1 === 0 ? <span className="text-orange-400 text-xs italic">Falta Tasa 1</span> : '-')}
+                        </td>
+                        <td className="px-4 py-4 text-gray-600">
+                          {pago2Bs > 0 ? formatoBs(pago2Bs) : (p2 > 0 && t2 === 0 ? <span className="text-orange-400 text-xs italic">Falta Tasa 2</span> : '-')}
+                        </td>
                         <td className="px-4 py-4 font-bold text-gray-800">{formatoBs(totalBs)}</td>
-                        <td className="px-4 py-4 text-gray-600">{adelantoBs > 0 ? formatoBs(adelantoBs) : '-'}</td>
-                        <td className="px-4 py-4 bg-emerald-50 text-emerald-700 font-medium">{restanteBs > 0 ? formatoBs(restanteBs) : (t2 === 0 && saldoUSD > 0 ? <span className="text-orange-400 text-xs italic">Esperando Tasa...</span> : '-')}</td>
+                        <td className="px-4 py-4 bg-red-50 text-red-700 font-medium">{reinvBs > 0 ? formatoBs(reinvBs) : '-'}</td>
+                        <td className="px-4 py-4 bg-emerald-50 text-emerald-700 font-medium">{saldoBaseBs > 0 ? formatoBs(saldoBaseBs) : '-'}</td>
                         <td className="px-4 py-4 bg-blue-50/50 text-blue-700 font-medium">{sueldoBs > 0 ? formatoBs(sueldoBs) : '-'}</td>
                         <td className="px-4 py-4 bg-blue-50/50 text-blue-700 font-medium">{ahorroBs > 0 ? formatoBs(ahorroBs) : '-'}</td>
                         <td className="px-4 py-4 bg-purple-50/50 text-purple-700 font-medium">{duenasTotalBs > 0 ? formatoBs(duenasTotalBs) : '-'}</td>
                         <td className="px-4 py-4 bg-purple-50/50 text-purple-700 font-bold">{porDuenaBs > 0 ? formatoBs(porDuenaBs) : '-'}</td>
                         <td className="px-4 py-4">
-                          {estaPagadoCompleto ? <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full">Completado</span> : <span className="px-2 py-1 bg-orange-100 text-orange-700 text-xs font-bold rounded-full">Pendiente</span>}
+                          {totalPagadoUSD === 0 ? <span className="text-gray-400 text-xs italic">-</span> : (estaPagadoCompleto ? <span className="px-2 py-1 bg-green-100 text-green-700 text-xs font-bold rounded-full">Completado</span> : <span className="px-2 py-1 bg-orange-100 text-orange-700 text-xs font-bold rounded-full">Pendiente</span>)}
                         </td>
                       </tr>
                     );
@@ -639,16 +687,16 @@ export default function App() {
           </>
         )}
 
-        {/* --- VISTA: HISTORIAL DE CIERRES Y DEDUCCIONES --- */}
+        {/* --- VISTA: HISTORIAL DE CIERRES --- */}
         {vista === 'historial' && (
           <div>
-            <header className="mb-6">
+            <header className="mb-8">
               <h1 className="text-3xl font-bold text-slate-800 flex items-center gap-2">
                 <Archive className="w-8 h-8 text-indigo-600" />
                 Historial
               </h1>
               <p className="text-slate-500 mt-1">Revisa la información guardada y deducciones.</p>
-              
+
               <div className="flex gap-4 mt-6 border-b border-gray-200">
                 <button 
                   onClick={() => setSubVistaHistorial('cierres')}
