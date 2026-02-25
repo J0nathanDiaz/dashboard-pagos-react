@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, DollarSign, Calculator, Wallet, Users, ChevronRight, Download, Cloud, CloudOff, Loader2, Archive, History, ArrowLeft, Calendar, Building2, MinusCircle, ReceiptText } from 'lucide-react';
+import { Plus, Trash2, DollarSign, Calculator, Wallet, Users, ChevronRight, Download, Cloud, CloudOff, Loader2, Archive, History, ArrowLeft, Calendar, Building2, MinusCircle, ReceiptText, Package, PlusCircle } from 'lucide-react';
 
 // --- 1. CONFIGURACIÓN REAL DE FIREBASE ---
 import { initializeApp } from 'firebase/app';
@@ -48,6 +48,11 @@ export default function App() {
   const [formDeduccion, setFormDeduccion] = useState({ descripcion: '', monto: '' });
   const [subVistaHistorial, setSubVistaHistorial] = useState('cierres');
 
+  // NUEVOS ESTADOS PARA INVENTARIO
+  const [inventario, setInventario] = useState([]);
+  const [mostrarModalInventario, setMostrarModalInventario] = useState(false);
+  const [formInventario, setFormInventario] = useState({ nombre: '', cantidad: '', unidad: 'Unidades' });
+
   const [user, setUser] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [estadoGuardado, setEstadoGuardado] = useState('sincronizado');
@@ -83,6 +88,7 @@ export default function App() {
         setDatos(data.datos || estadoInicial);
         setCierres(data.cierres || []);
         setDeducciones(data.deducciones || []);
+        setInventario(data.inventario || []);
       }
       setCargando(false);
     }, (error) => {
@@ -94,17 +100,18 @@ export default function App() {
     return () => unsubscribe();
   }, [user]);
 
-  const guardarDatosEnNube = async (nuevosDatos = datos, nuevosCierres = cierres, nuevasDeducciones = deducciones) => {
+  const guardarDatosEnNube = async (nuevosDatos = datos, nuevosCierres = cierres, nuevasDeducciones = deducciones, nuevoInventario = inventario) => {
     setDatos(nuevosDatos);
     setCierres(nuevosCierres);
     setDeducciones(nuevasDeducciones);
+    setInventario(nuevoInventario);
     
     if (user) {
       setEstadoGuardado('guardando');
       // Ruta COMPARTIDA para que todos guarden en el mismo lugar
       const docRef = doc(db, 'empresa', 'pagos', 'dashboardData', 'estadoActual');
       try {
-        await setDoc(docRef, { datos: nuevosDatos, cierres: nuevosCierres, deducciones: nuevasDeducciones });
+        await setDoc(docRef, { datos: nuevosDatos, cierres: nuevosCierres, deducciones: nuevasDeducciones, inventario: nuevoInventario });
         setEstadoGuardado('sincronizado');
       } catch (error) {
         console.error("Error guardando:", error);
@@ -199,7 +206,45 @@ export default function App() {
 
   const eliminarDeduccion = (id) => {
     const nuevas = deducciones.filter(d => d.id !== id);
-    guardarDatosEnNube(datos, cierres, nuevas);
+    guardarDatosEnNube(datos, cierres, nuevas, inventario);
+  };
+
+  // --- LÓGICA DE INVENTARIO ---
+  const abrirModalInventario = () => {
+    setFormInventario({ nombre: '', cantidad: '', unidad: 'Unidades' });
+    setMostrarModalInventario(true);
+  };
+
+  const procesarMaterial = () => {
+    if (!formInventario.nombre.trim() || !formInventario.cantidad) return;
+    
+    const nuevoMaterial = {
+      id: generarId(),
+      fecha: new Date().toISOString(),
+      nombre: formInventario.nombre,
+      cantidad: parseFloat(formInventario.cantidad),
+      unidad: formInventario.unidad
+    };
+
+    const nuevoInventario = [nuevoMaterial, ...inventario];
+    guardarDatosEnNube(datos, cierres, deducciones, nuevoInventario);
+    setMostrarModalInventario(false);
+  };
+
+  const eliminarMaterial = (id) => {
+    const nuevo = inventario.filter(m => m.id !== id);
+    guardarDatosEnNube(datos, cierres, deducciones, nuevo);
+  };
+
+  const ajustarCantidadMaterial = (id, ajuste) => {
+    const nuevo = inventario.map(m => {
+      if (m.id === id) {
+        const nuevaCantidad = Math.max(0, m.cantidad + ajuste); // Evita que baje de 0
+        return { ...m, cantidad: nuevaCantidad };
+      }
+      return m;
+    });
+    guardarDatosEnNube(datos, cierres, deducciones, nuevo);
   };
 
   // --- 6. EXPORTACIÓN A EXCEL NATIVO (.XLS) ---
@@ -650,6 +695,12 @@ export default function App() {
                 Panel de Trabajo
               </button>
               <button 
+                onClick={() => setVista('inventario')}
+                className={`px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-1 ${vista === 'inventario' ? 'bg-slate-900 text-white' : 'text-slate-300 hover:bg-slate-700 hover:text-white'}`}
+              >
+                <Package className="w-4 h-4" /> Inventario
+              </button>
+              <button 
                 onClick={() => setVista('historial')}
                 className={`px-3 py-2 rounded-md text-sm font-medium transition-colors flex items-center gap-1 ${vista === 'historial' || vista === 'detalleCierre' ? 'bg-slate-900 text-white' : 'text-slate-300 hover:bg-slate-700 hover:text-white'}`}
               >
@@ -827,6 +878,65 @@ export default function App() {
             {renderTablas(cierreSeleccionado.datosGuardados, true)}
           </div>
         )}
+
+        {/* --- VISTA: INVENTARIO --- */}
+        {vista === 'inventario' && (
+          <div>
+            <header className="mb-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+              <div>
+                <h1 className="text-3xl font-bold text-slate-800 flex items-center gap-2">
+                  <Package className="w-8 h-8 text-indigo-600" />
+                  Inventario de Materiales
+                </h1>
+                <p className="text-slate-500 mt-1">Gestiona el stock de materiales disponibles.</p>
+              </div>
+              <button 
+                onClick={abrirModalInventario}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-lg text-sm font-semibold flex items-center gap-2 transition-all shadow-sm"
+              >
+                <PlusCircle className="w-4 h-4" /> Añadir Material
+              </button>
+            </header>
+
+            <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left">
+                  <thead className="bg-gray-50 text-gray-500 uppercase text-xs border-b">
+                    <tr>
+                      <th className="px-6 py-4">Material</th>
+                      <th className="px-6 py-4">Unidad de Medida</th>
+                      <th className="px-6 py-4 text-center">Cantidad en Stock</th>
+                      <th className="px-6 py-4 text-center">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inventario.map(material => (
+                      <tr key={material.id} className="border-b hover:bg-gray-50 transition-colors">
+                        <td className="px-6 py-4 font-semibold text-gray-800">{material.nombre}</td>
+                        <td className="px-6 py-4 text-gray-600">{material.unidad}</td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center justify-center gap-3 bg-gray-50 rounded-lg p-1 w-fit mx-auto border border-gray-200">
+                            <button onClick={() => ajustarCantidadMaterial(material.id, -1)} className="text-gray-500 hover:text-red-600 hover:bg-red-50 p-1.5 rounded-md transition-colors"><MinusCircle className="w-5 h-5" /></button>
+                            <span className="font-bold text-lg w-12 text-center text-indigo-700">{material.cantidad}</span>
+                            <button onClick={() => ajustarCantidadMaterial(material.id, 1)} className="text-gray-500 hover:text-green-600 hover:bg-green-50 p-1.5 rounded-md transition-colors"><PlusCircle className="w-5 h-5" /></button>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <button onClick={() => eliminarMaterial(material.id)} className="text-red-400 hover:text-red-600 p-2 rounded hover:bg-red-50 transition-colors" title="Eliminar Material">
+                            <Trash2 className="w-5 h-5 mx-auto"/>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                    {inventario.length === 0 && (
+                      <tr><td colSpan="4" className="text-center py-12 text-gray-500">No hay materiales en el inventario. Haz clic en "Añadir Material" para empezar.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* --- MODAL PARA CONFIRMAR EL CIERRE --- */}
@@ -920,6 +1030,83 @@ export default function App() {
                 className="px-6 py-2 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-colors shadow-sm disabled:opacity-50"
               >
                 Guardar Deducción
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL PARA AÑADIR INVENTARIO --- */}
+      {mostrarModalInventario && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 animate-in fade-in zoom-in duration-200">
+            <div className="flex items-center gap-3 text-indigo-600 mb-4">
+              <Package className="w-8 h-8" />
+              <h2 className="text-2xl font-bold">Añadir Material</h2>
+            </div>
+            <p className="text-gray-600 mb-4 text-sm">
+              Ingresa los detalles del nuevo material para tu inventario.
+            </p>
+            
+            <div className="space-y-4 mb-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nombre del Material</label>
+                <input 
+                  type="text" 
+                  autoFocus
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                  placeholder="Ej: Tela de Algodón, Hilos, Agujas..."
+                  value={formInventario.nombre}
+                  onChange={(e) => setFormInventario({...formInventario, nombre: e.target.value})}
+                />
+              </div>
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Cantidad Inicial</label>
+                  <input 
+                    type="number" 
+                    min="0"
+                    step="any"
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                    placeholder="0"
+                    value={formInventario.cantidad}
+                    onChange={(e) => setFormInventario({...formInventario, cantidad: e.target.value})}
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Unidad</label>
+                  <select 
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none bg-white"
+                    value={formInventario.unidad}
+                    onChange={(e) => setFormInventario({...formInventario, unidad: e.target.value})}
+                  >
+                    <option value="Unidades">Unidades</option>
+                    <option value="Metros">Metros</option>
+                    <option value="Centímetros">Centímetros</option>
+                    <option value="Litros">Litros</option>
+                    <option value="Kilos">Kilos</option>
+                    <option value="Gramos">Gramos</option>
+                    <option value="Rollos">Rollos</option>
+                    <option value="Cajas">Cajas</option>
+                    <option value="Pares">Pares</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button 
+                onClick={() => setMostrarModalInventario(false)}
+                className="px-4 py-2 text-gray-600 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={procesarMaterial}
+                disabled={!formInventario.nombre || !formInventario.cantidad}
+                className="px-6 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-50"
+              >
+                Guardar Material
               </button>
             </div>
           </div>
