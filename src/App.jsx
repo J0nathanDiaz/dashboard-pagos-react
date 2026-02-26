@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, DollarSign, Calculator, Wallet, Users, ChevronRight, ChevronLeft, Download, Cloud, CloudOff, Loader2, Archive, History, ArrowLeft, Calendar, Building2, MinusCircle, ReceiptText, Package, PlusCircle, X } from 'lucide-react';
+import { Plus, Trash2, DollarSign, Calculator, Wallet, Users, ChevronRight, ChevronLeft, Download, Cloud, CloudOff, Loader2, Archive, History, ArrowLeft, Calendar, Building2, MinusCircle, ReceiptText, Package, PlusCircle, X, Edit3 } from 'lucide-react';
 
 // --- 1. CONFIGURACIÓN REAL DE FIREBASE ---
 import { initializeApp } from 'firebase/app';
@@ -75,7 +75,10 @@ export default function App() {
   const [filtroTiempo, setFiltroTiempo] = useState('todos');
   const [filtroAno, setFiltroAno] = useState(new Date().getFullYear().toString());
   const [filtroDashboard, setFiltroDashboard] = useState('todos'); 
-  const [diaSeleccionadoDetalle, setDiaSeleccionadoDetalle] = useState(null); // NUEVO ESTADO PARA EL MODAL DE DETALLE DEL DÍA
+  const [diaSeleccionadoDetalle, setDiaSeleccionadoDetalle] = useState(null); 
+
+  // NUEVO: ESTADO PARA EL MODAL DE PAGO/TASA INTERACTIVO
+  const [modalPago, setModalPago] = useState({ isOpen: false, persona: '', idFila: '', tipoPago: 1, monto: '', tasa: '' });
 
   const [user, setUser] = useState(null);
   const [cargando, setCargando] = useState(true);
@@ -168,6 +171,34 @@ export default function App() {
       [persona]: datos[persona].filter(registro => registro.id !== id)
     };
     guardarDatosEnNube(nuevosDatos);
+  };
+
+  // Lógica del Modal de Pago
+  const abrirModalPago = (persona, idFila, tipoPago, montoActual, tasaActual) => {
+    setModalPago({
+      isOpen: true,
+      persona,
+      idFila,
+      tipoPago,
+      monto: montoActual !== undefined && montoActual !== '' ? montoActual : '',
+      tasa: tasaActual !== undefined && tasaActual !== '' ? tasaActual : ''
+    });
+  };
+
+  const guardarModalPago = () => {
+    const { persona, idFila, tipoPago, monto, tasa } = modalPago;
+    const campoMonto = tipoPago === 1 ? 'pago1USD' : 'pago2USD';
+    const campoTasa = tipoPago === 1 ? 'tasa1' : 'tasa2';
+
+    const nuevosDatos = {
+      ...datos,
+      [persona]: datos[persona].map(registro => 
+        registro.id === idFila ? { ...registro, [campoMonto]: monto, [campoTasa]: tasa } : registro
+      )
+    };
+    
+    guardarDatosEnNube(nuevosDatos);
+    setModalPago({ ...modalPago, isOpen: false });
   };
 
   // --- 5. LÓGICA DE CIERRES ---
@@ -619,77 +650,99 @@ export default function App() {
             {esSoloLectura && <div className="absolute inset-0 bg-gray-50/10 pointer-events-none z-10"></div>}
             
             <div className={`p-4 flex justify-between items-center ${esSoloLectura ? 'bg-slate-600' : 'bg-slate-800'}`}>
-              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2 whitespace-nowrap">
                 <DollarSign className="w-5 h-5 text-green-400" />
                 1. Base de Datos (Dólares y Tasas) {esSoloLectura && " - MODO LECTURA"}
               </h2>
               {!esSoloLectura && (
-                <button onClick={() => agregarFila(pestanaActiva)} className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1 transition-colors">
+                <button onClick={() => agregarFila(pestanaActiva)} className="bg-indigo-500 hover:bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-1 transition-colors whitespace-nowrap">
                   <Plus className="w-4 h-4" /> Nueva Fila
                 </button>
               )}
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm text-left">
+            <div className="overflow-x-auto pb-4">
+              <table className="w-full text-sm text-left whitespace-nowrap min-w-max">
                 <thead className="text-xs text-gray-500 bg-gray-50 uppercase border-b">
                   <tr>
-                    <th className="px-4 py-3">Fecha</th>
-                    <th className="px-4 py-3">Cliente</th>
-                    <th className="px-4 py-3">Pago 1 ($)</th>
-                    <th className="px-4 py-3">Pago 2 ($)</th>
-                    <th className="px-4 py-3 bg-red-50 text-red-800">Reinversión ($)</th>
+                    <th className="px-4 py-3 min-w-[130px]">Fecha</th>
+                    <th className="px-4 py-3 min-w-[200px]">Cliente</th>
+                    <th className="px-4 py-3 min-w-[120px]">Pago 1 (Modal)</th>
+                    <th className="px-4 py-3 min-w-[120px]">Pago 2 (Modal)</th>
+                    <th className="px-4 py-3 bg-red-50 text-red-800 min-w-[100px]">Reinversión ($)</th>
                     <th className="px-4 py-3 bg-indigo-50 text-indigo-800">Valor Bruto / Saldo ($)</th>
                     <th className="px-4 py-3 bg-blue-50 text-blue-800">Sueldo 20%</th>
                     <th className="px-4 py-3 bg-blue-50 text-blue-800">Ahorro 10%</th>
                     <th className="px-4 py-3 bg-purple-50 text-purple-800">Dueñas 70%</th>
                     <th className="px-4 py-3 bg-purple-50 text-purple-800">C/Dueña (35%)</th>
-                    <th className="px-4 py-3">Tasa 1 (Pago 1)</th>
-                    <th className="px-4 py-3">Tasa 2 (Pago 2)</th>
-                    <th className="px-4 py-3 text-center">Entregado</th>
+                    <th className="px-4 py-3 text-center min-w-[120px]">Entregado</th>
                     {!esSoloLectura && <th className="px-4 py-3 text-center">Borrar</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {registrosActuales.map((fila) => {
-                    const { saldoBaseUSD, sueldo, ahorro, duenasTotal, porDuena } = calcularValores(fila);
+                    const { p1, p2, t1, t2, saldoBaseUSD, sueldo, ahorro, duenasTotal, porDuena } = calcularValores(fila);
                     return (
                       <tr key={fila.id} className="border-b hover:bg-gray-50 transition-colors">
                         <td className="px-4 py-2">
                           <input 
                             type="date" 
                             disabled={esSoloLectura} 
-                            className={`w-32 p-2 border border-gray-300 rounded outline-none text-xs font-medium ${esSoloLectura ? 'bg-transparent border-transparent' : 'focus:ring-2 focus:ring-indigo-500'}`} 
+                            className={`w-full min-w-[130px] p-2 border border-gray-300 rounded outline-none text-xs font-medium ${esSoloLectura ? 'bg-transparent border-transparent' : 'focus:ring-2 focus:ring-indigo-500'}`} 
                             value={formatInputDate(fila.fecha)} 
                             onChange={(e) => actualizarRegistro(pestanaActiva, fila.id, 'fecha', e.target.value)} 
                           />
                         </td>
                         <td className="px-4 py-2">
-                          <input type="text" disabled={esSoloLectura} className={`w-full p-2 border border-gray-300 rounded outline-none ${esSoloLectura ? 'bg-transparent border-transparent' : 'focus:ring-2 focus:ring-indigo-500'}`} placeholder="Nombre..." value={fila.cliente} onChange={(e) => actualizarRegistro(pestanaActiva, fila.id, 'cliente', e.target.value)} />
+                          <input type="text" disabled={esSoloLectura} className={`w-full min-w-[200px] p-2 border border-gray-300 rounded outline-none ${esSoloLectura ? 'bg-transparent border-transparent' : 'focus:ring-2 focus:ring-indigo-500'}`} placeholder="Nombre del cliente..." value={fila.cliente} onChange={(e) => actualizarRegistro(pestanaActiva, fila.id, 'cliente', e.target.value)} />
                         </td>
+                        
+                        {/* INTERFAZ DEL MODAL PAGO 1 */}
                         <td className="px-4 py-2">
-                          <input type="number" min="0" step="any" disabled={esSoloLectura} className={`w-20 p-2 border border-gray-300 rounded outline-none ${esSoloLectura ? 'bg-transparent border-transparent' : 'focus:ring-2 focus:ring-indigo-500'}`} placeholder="0" value={fila.pago1USD !== undefined ? fila.pago1USD : (fila.totalUSD || '')} onChange={(e) => actualizarRegistro(pestanaActiva, fila.id, 'pago1USD', e.target.value)} />
+                          <button 
+                            onClick={() => !esSoloLectura && abrirModalPago(pestanaActiva, fila.id, 1, fila.pago1USD !== undefined ? fila.pago1USD : fila.totalUSD, fila.tasa1)}
+                            disabled={esSoloLectura}
+                            className={`w-full p-2 border rounded outline-none text-left flex flex-col justify-center transition-colors min-h-[42px] ${esSoloLectura ? 'bg-transparent border-transparent' : 'border-gray-300 hover:border-indigo-500 bg-white hover:bg-indigo-50 focus:ring-2 focus:ring-indigo-500'}`}
+                          >
+                            <div className="flex justify-between items-center w-full">
+                              <span className={`font-bold ${p1 > 0 ? 'text-gray-800' : 'text-gray-400'}`}>
+                                {p1 > 0 ? formatoUSD(p1) : '+ Añadir'}
+                              </span>
+                              {!esSoloLectura && <Edit3 className="w-3 h-3 text-gray-400" />}
+                            </div>
+                            {p1 > 0 && <span className="text-[10px] text-gray-500 mt-0.5 font-medium">Tasa: {t1 > 0 ? t1 : <span className="text-orange-500">Pendiente</span>}</span>}
+                          </button>
                         </td>
+
+                        {/* INTERFAZ DEL MODAL PAGO 2 */}
                         <td className="px-4 py-2">
-                          <input type="number" min="0" step="any" disabled={esSoloLectura} className={`w-20 p-2 border border-gray-300 rounded outline-none ${esSoloLectura ? 'bg-transparent border-transparent' : 'focus:ring-2 focus:ring-indigo-500'}`} placeholder="0" value={fila.pago2USD || ''} onChange={(e) => actualizarRegistro(pestanaActiva, fila.id, 'pago2USD', e.target.value)} />
+                          <button 
+                            onClick={() => !esSoloLectura && abrirModalPago(pestanaActiva, fila.id, 2, fila.pago2USD, fila.tasa2)}
+                            disabled={esSoloLectura}
+                            className={`w-full p-2 border rounded outline-none text-left flex flex-col justify-center transition-colors min-h-[42px] ${esSoloLectura ? 'bg-transparent border-transparent' : 'border-gray-300 hover:border-indigo-500 bg-white hover:bg-indigo-50 focus:ring-2 focus:ring-indigo-500'}`}
+                          >
+                            <div className="flex justify-between items-center w-full">
+                              <span className={`font-bold ${p2 > 0 ? 'text-gray-800' : 'text-gray-400'}`}>
+                                {p2 > 0 ? formatoUSD(p2) : '+ Añadir'}
+                              </span>
+                              {!esSoloLectura && <Edit3 className="w-3 h-3 text-gray-400" />}
+                            </div>
+                            {p2 > 0 && <span className="text-[10px] text-gray-500 mt-0.5 font-medium">Tasa: {t2 > 0 ? t2 : <span className="text-orange-500">Pendiente</span>}</span>}
+                          </button>
                         </td>
+
                         <td className="px-4 py-2">
-                          <input type="number" min="0" step="any" disabled={esSoloLectura} className={`w-20 p-2 border border-red-300 rounded outline-none bg-red-50 ${esSoloLectura ? 'bg-transparent border-transparent' : 'focus:ring-2 focus:ring-red-500'}`} placeholder="0" value={fila.reinversionUSD !== undefined ? fila.reinversionUSD : (fila.adelantoUSD || '')} onChange={(e) => actualizarRegistro(pestanaActiva, fila.id, 'reinversionUSD', e.target.value)} />
+                          <input type="number" min="0" step="any" disabled={esSoloLectura} className={`w-full min-w-[100px] p-2 border border-red-300 rounded outline-none bg-red-50 font-semibold text-red-700 ${esSoloLectura ? 'bg-transparent border-transparent' : 'focus:ring-2 focus:ring-red-500'}`} placeholder="0" value={fila.reinversionUSD !== undefined ? fila.reinversionUSD : (fila.adelantoUSD || '')} onChange={(e) => actualizarRegistro(pestanaActiva, fila.id, 'reinversionUSD', e.target.value)} />
                         </td>
-                        <td className="px-4 py-2 bg-indigo-50 font-bold text-indigo-700">{formatoUSD(saldoBaseUSD)}</td>
+                        <td className="px-4 py-2 bg-indigo-50 font-bold text-indigo-700 text-lg">{formatoUSD(saldoBaseUSD)}</td>
                         <td className="px-4 py-2 bg-blue-50/50 text-blue-700 font-medium">{formatoUSD(sueldo)}</td>
                         <td className="px-4 py-2 bg-blue-50/50 text-blue-700 font-medium">{formatoUSD(ahorro)}</td>
                         <td className="px-4 py-2 bg-purple-50/50 text-purple-700 font-medium">{formatoUSD(duenasTotal)}</td>
                         <td className="px-4 py-2 bg-purple-50/50 text-purple-700 font-bold">{formatoUSD(porDuena)}</td>
-                        <td className="px-4 py-2">
-                          <input type="number" min="0" step="any" disabled={esSoloLectura} className={`w-20 p-2 border border-orange-300 rounded outline-none ${esSoloLectura ? 'bg-transparent border-transparent text-gray-800 font-medium' : 'bg-orange-50 focus:ring-2 focus:ring-orange-500'}`} placeholder="Bs." value={fila.tasa1} onChange={(e) => actualizarRegistro(pestanaActiva, fila.id, 'tasa1', e.target.value)} />
-                        </td>
-                        <td className="px-4 py-2">
-                          <input type="number" min="0" step="any" disabled={esSoloLectura} className={`w-20 p-2 border border-orange-300 rounded outline-none ${esSoloLectura ? 'bg-transparent border-transparent text-gray-800 font-medium' : 'bg-orange-50 focus:ring-2 focus:ring-orange-500'}`} placeholder="Bs." value={fila.tasa2} onChange={(e) => actualizarRegistro(pestanaActiva, fila.id, 'tasa2', e.target.value)} />
-                        </td>
+                        
                         <td className="px-4 py-2 text-center">
                           <select 
                             disabled={esSoloLectura}
-                            className={`p-2 border rounded outline-none font-medium text-sm transition-colors ${fila.entregado === 'Sí' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'} ${esSoloLectura ? 'appearance-none' : 'focus:ring-2 focus:ring-indigo-500'}`}
+                            className={`w-full min-w-[90px] p-2 border rounded outline-none font-medium text-sm transition-colors ${fila.entregado === 'Sí' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-red-50 text-red-700 border-red-200'} ${esSoloLectura ? 'appearance-none' : 'focus:ring-2 focus:ring-indigo-500'}`}
                             value={fila.entregado || 'No'}
                             onChange={(e) => actualizarRegistro(pestanaActiva, fila.id, 'entregado', e.target.value)}
                           >
@@ -699,14 +752,14 @@ export default function App() {
                         </td>
                         {!esSoloLectura && (
                           <td className="px-4 py-2 text-center">
-                            <button onClick={() => eliminarFila(pestanaActiva, fila.id)} className="text-red-500 hover:text-red-700 p-2 rounded hover:bg-red-50 transition-colors"><Trash2 className="w-5 h-5" /></button>
+                            <button onClick={() => eliminarFila(pestanaActiva, fila.id)} className="text-red-500 hover:text-red-700 p-2 rounded hover:bg-red-50 transition-colors"><Trash2 className="w-5 h-5 mx-auto" /></button>
                           </td>
                         )}
                       </tr>
                     );
                   })}
                   {!esSoloLectura && registrosActuales.length === 0 && (
-                    <tr><td colSpan="14" className="text-center py-8 text-gray-500">No hay registros.</td></tr>
+                    <tr><td colSpan="12" className="text-center py-8 text-gray-500">No hay registros.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -717,13 +770,13 @@ export default function App() {
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden relative">
             <div className="absolute inset-0 bg-gray-50/20 pointer-events-none z-10"></div>
             <div className={`p-4 flex justify-between items-center ${esSoloLectura ? 'bg-emerald-800' : 'bg-emerald-700'}`}>
-              <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+              <h2 className="text-lg font-semibold text-white flex items-center gap-2 whitespace-nowrap">
                 <ChevronRight className="w-5 h-5 text-emerald-300" />
                 2. Cálculos en Bolívares (Automático)
               </h2>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm text-left">
+            <div className="overflow-x-auto pb-4">
+              <table className="w-full text-sm text-left whitespace-nowrap min-w-max">
                 <thead className="text-xs text-gray-500 bg-gray-50 uppercase border-b">
                   <tr>
                     <th className="px-4 py-3">Fecha</th>
@@ -1063,8 +1116,8 @@ export default function App() {
                     Registro de Deducciones
                   </h2>
                 </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm text-left">
+                <div className="overflow-x-auto pb-4">
+                  <table className="w-full text-sm text-left whitespace-nowrap min-w-max">
                     <thead className="bg-gray-50 text-gray-500 uppercase text-xs border-b">
                       <tr>
                         <th className="px-4 py-3">Fecha</th>
@@ -1141,8 +1194,8 @@ export default function App() {
             </header>
 
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm text-left">
+              <div className="overflow-x-auto pb-4">
+                <table className="w-full text-sm text-left whitespace-nowrap min-w-max">
                   <thead className="bg-gray-50 text-gray-500 uppercase text-xs border-b">
                     <tr>
                       <th className="px-6 py-4">Material</th>
@@ -1180,6 +1233,70 @@ export default function App() {
           </div>
         )}
       </div>
+
+      {/* --- MODAL PARA CONFIGURAR PAGO Y TASA (NUEVO) --- */}
+      {modalPago.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6 animate-in fade-in zoom-in duration-200">
+            <div className="flex justify-between items-center mb-4">
+              <div className="flex items-center gap-2 text-indigo-600">
+                <DollarSign className="w-6 h-6" />
+                <h2 className="text-xl font-bold">Configurar Pago {modalPago.tipoPago}</h2>
+              </div>
+              <button onClick={() => setModalPago({...modalPago, isOpen: false})} className="text-gray-400 hover:text-gray-600 hover:bg-gray-100 p-1 rounded-full transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <p className="text-gray-600 mb-6 text-sm">
+              Asigna el monto recibido y la tasa de cambio específica para este pago.
+            </p>
+            
+            <div className="space-y-4 mb-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Monto en Dólares ($)</label>
+                <input 
+                  type="number" 
+                  min="0"
+                  step="any"
+                  autoFocus
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-lg font-medium"
+                  placeholder="0.00"
+                  value={modalPago.monto}
+                  onChange={(e) => setModalPago({...modalPago, monto: e.target.value})}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Tasa de Cambio (Bs)</label>
+                <input 
+                  type="number" 
+                  min="0"
+                  step="any"
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-lg font-medium"
+                  placeholder="0.00"
+                  value={modalPago.tasa}
+                  onChange={(e) => setModalPago({...modalPago, tasa: e.target.value})}
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end pt-2 border-t border-gray-100">
+              <button 
+                onClick={() => setModalPago({...modalPago, isOpen: false})}
+                className="px-4 py-2 text-gray-600 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={guardarModalPago}
+                className="px-6 py-2 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
+              >
+                Guardar Pago
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* --- MODAL PARA CONFIRMAR EL CIERRE --- */}
       {mostrarModalCierre && (
