@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, DollarSign, Calculator, Wallet, Users, ChevronRight, Download, Cloud, CloudOff, Loader2, Archive, History, ArrowLeft, Calendar, Building2, MinusCircle, ReceiptText, Package, PlusCircle } from 'lucide-react';
+import { Plus, Trash2, DollarSign, Calculator, Wallet, Users, ChevronRight, ChevronLeft, Download, Cloud, CloudOff, Loader2, Archive, History, ArrowLeft, Calendar, Building2, MinusCircle, ReceiptText, Package, PlusCircle, X } from 'lucide-react';
 
 // --- 1. CONFIGURACIÓN REAL DE FIREBASE ---
 import { initializeApp } from 'firebase/app';
@@ -23,8 +23,25 @@ const db = getFirestore(app);
 // Un ID fijo para tu aplicación
 const appId = "dashboard-pagos-oficial";
 
+// Ayudante para mantener la fecha siempre en formato YYYY-MM-DD
+const formatInputDate = (fechaRaw) => {
+  if (!fechaRaw) return new Date().toISOString().split('T')[0];
+  if (fechaRaw.includes('T')) return fechaRaw.split('T')[0];
+  return fechaRaw;
+};
+
 const generarId = () => Math.random().toString(36).substr(2, 9);
-const generarFilaVacia = () => ({ id: generarId(), cliente: '', pago1USD: '', pago2USD: '', reinversionUSD: '', tasa1: '', tasa2: '', entregado: 'No' });
+const generarFilaVacia = () => ({ 
+  id: generarId(), 
+  fecha: formatInputDate(new Date().toISOString()), 
+  cliente: '', 
+  pago1USD: '', 
+  pago2USD: '', 
+  reinversionUSD: '', 
+  tasa1: '', 
+  tasa2: '', 
+  entregado: 'No' 
+});
 
 const estadoInicial = {
   Ambar: [generarFilaVacia()],
@@ -53,6 +70,13 @@ export default function App() {
   const [mostrarModalInventario, setMostrarModalInventario] = useState(false);
   const [formInventario, setFormInventario] = useState({ nombre: '', cantidad: '', unidad: 'Unidades' });
 
+  // ESTADO PARA EL CALENDARIO Y FILTROS DE TIEMPO
+  const [fechaCalendario, setFechaCalendario] = useState(new Date());
+  const [filtroTiempo, setFiltroTiempo] = useState('todos');
+  const [filtroAno, setFiltroAno] = useState(new Date().getFullYear().toString());
+  const [filtroDashboard, setFiltroDashboard] = useState('todos'); 
+  const [diaSeleccionadoDetalle, setDiaSeleccionadoDetalle] = useState(null); // NUEVO ESTADO PARA EL MODAL DE DETALLE DEL DÍA
+
   const [user, setUser] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [estadoGuardado, setEstadoGuardado] = useState('sincronizado');
@@ -79,7 +103,6 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
     
-    // Ruta COMPARTIDA en tu base de datos de Firebase
     const docRef = doc(db, 'empresa', 'pagos', 'dashboardData', 'estadoActual');
 
     const unsubscribe = onSnapshot(docRef, (docSnap) => {
@@ -108,7 +131,6 @@ export default function App() {
     
     if (user) {
       setEstadoGuardado('guardando');
-      // Ruta COMPARTIDA para que todos guarden en el mismo lugar
       const docRef = doc(db, 'empresa', 'pagos', 'dashboardData', 'estadoActual');
       try {
         await setDoc(docRef, { datos: nuevosDatos, cierres: nuevosCierres, deducciones: nuevasDeducciones, inventario: nuevoInventario });
@@ -137,6 +159,7 @@ export default function App() {
       [persona]: [...datos[persona], generarFilaVacia()]
     };
     guardarDatosEnNube(nuevosDatos);
+    setFiltroDashboard('todos'); 
   };
 
   const eliminarFila = (persona, id) => {
@@ -181,7 +204,7 @@ export default function App() {
     setVista('historial'); 
   };
 
-  // --- LÓGICA DE DEDUCCIONES ---
+  // --- LÓGICA DE DEDUCCIONES E INVENTARIO ---
   const abrirModalDeduccion = (banco) => {
     setBancoDeduccion(banco);
     setFormDeduccion({ descripcion: '', monto: '' });
@@ -190,15 +213,7 @@ export default function App() {
 
   const procesarDeduccion = () => {
     if (!formDeduccion.descripcion.trim() || !formDeduccion.monto) return;
-    
-    const nuevaDeduccion = {
-      id: generarId(),
-      fecha: new Date().toISOString(),
-      banco: bancoDeduccion,
-      descripcion: formDeduccion.descripcion,
-      monto: parseFloat(formDeduccion.monto)
-    };
-
+    const nuevaDeduccion = { id: generarId(), fecha: new Date().toISOString(), banco: bancoDeduccion, descripcion: formDeduccion.descripcion, monto: parseFloat(formDeduccion.monto) };
     const nuevasDeducciones = [nuevaDeduccion, ...deducciones];
     guardarDatosEnNube(datos, cierres, nuevasDeducciones);
     setMostrarModalDeduccion(false);
@@ -209,7 +224,6 @@ export default function App() {
     guardarDatosEnNube(datos, cierres, nuevas, inventario);
   };
 
-  // --- LÓGICA DE INVENTARIO ---
   const abrirModalInventario = () => {
     setFormInventario({ nombre: '', cantidad: '', unidad: 'Unidades' });
     setMostrarModalInventario(true);
@@ -217,15 +231,7 @@ export default function App() {
 
   const procesarMaterial = () => {
     if (!formInventario.nombre.trim() || !formInventario.cantidad) return;
-    
-    const nuevoMaterial = {
-      id: generarId(),
-      fecha: new Date().toISOString(),
-      nombre: formInventario.nombre,
-      cantidad: parseFloat(formInventario.cantidad),
-      unidad: formInventario.unidad
-    };
-
+    const nuevoMaterial = { id: generarId(), fecha: new Date().toISOString(), nombre: formInventario.nombre, cantidad: parseFloat(formInventario.cantidad), unidad: formInventario.unidad };
     const nuevoInventario = [nuevoMaterial, ...inventario];
     guardarDatosEnNube(datos, cierres, deducciones, nuevoInventario);
     setMostrarModalInventario(false);
@@ -238,10 +244,7 @@ export default function App() {
 
   const ajustarCantidadMaterial = (id, ajuste) => {
     const nuevo = inventario.map(m => {
-      if (m.id === id) {
-        const nuevaCantidad = Math.max(0, m.cantidad + ajuste); // Evita que baje de 0
-        return { ...m, cantidad: nuevaCantidad };
-      }
+      if (m.id === id) return { ...m, cantidad: Math.max(0, m.cantidad + ajuste) };
       return m;
     });
     guardarDatosEnNube(datos, cierres, deducciones, nuevo);
@@ -265,6 +268,7 @@ export default function App() {
         <table>
           <thead>
             <tr>
+              <th>Fecha</th>
               <th>Vendedor</th>
               <th>Cliente</th>
               <th>Pago 1 (USD)</th>
@@ -289,7 +293,6 @@ export default function App() {
 
     Object.keys(datosAExportar).forEach(persona => {
       datosAExportar[persona].forEach(fila => {
-        // Validación de fila vacía
         if (!fila.cliente && !fila.pago1USD && !fila.totalUSD) return;
 
         const calc = calcularValores(fila);
@@ -298,8 +301,12 @@ export default function App() {
         const estaPagadoCompleto = !faltaT1 && !faltaT2 && calc.totalPagadoUSD > 0;
         const estatus = estaPagadoCompleto ? "Completado" : "Pendiente";
         
+        // Formateo de fecha para Excel
+        const fechaFormateada = formatInputDate(fila.fecha).split('-').reverse().join('/');
+        
         tablaHTML += `
           <tr>
+            <td>${fechaFormateada}</td>
             <td class="bold">${persona}</td>
             <td>${fila.cliente || "Sin nombre"}</td>
             <td class="num">${calc.p1 || 0}</td>
@@ -337,8 +344,6 @@ export default function App() {
 
   // --- 7. CÁLCULOS MATEMÁTICOS ---
   const calcularValores = (registro) => {
-    // Definimos las variables base. 
-    // Usamos compatibilidad hacia atrás por si hay datos viejos guardados como totalUSD o adelantoUSD.
     const p1 = parseFloat(registro.pago1USD !== undefined ? registro.pago1USD : registro.totalUSD) || 0;
     const p2 = parseFloat(registro.pago2USD) || 0;
     const reinv = parseFloat(registro.reinversionUSD !== undefined ? registro.reinversionUSD : registro.adelantoUSD) || 0;
@@ -346,28 +351,22 @@ export default function App() {
     const t1 = parseFloat(registro.tasa1) || 0;
     const t2 = parseFloat(registro.tasa2) || 0;
 
-    // Suma de los pagos y cálculo del valor base real restando la reinversión
     const totalPagadoUSD = p1 + p2;
     const saldoBaseUSD = Math.max(0, totalPagadoUSD - reinv);
 
-    // Los porcentajes aplican sobre el Saldo Base (Total Pagos - Reinversión)
     const sueldo = saldoBaseUSD * 0.20;
     const ahorro = saldoBaseUSD * 0.10;
     const duenasTotal = saldoBaseUSD * 0.70;
     const porDuena = duenasTotal / 2;
 
-    // Conversiones a Bolívares usando sus tasas respectivas e independientes
     const pago1Bs = p1 * t1;
     const pago2Bs = p2 * t2;
     const totalBs = pago1Bs + pago2Bs;
 
-    // Tasa Promedio Ponderada: Nos permite distribuir los Bolívares totales matemáticamente 
-    // exactos entre el Sueldo, Ahorro, Dueñas y la cuenta de Reinversión.
     const blendedRate = totalPagadoUSD > 0 ? (totalBs / totalPagadoUSD) : 0;
 
     const reinvBs = reinv * blendedRate;
     const saldoBaseBs = saldoBaseUSD * blendedRate;
-
     const sueldoBs = sueldo * blendedRate;
     const ahorroBs = ahorro * blendedRate;
     const duenasTotalBs = duenasTotal * blendedRate;
@@ -382,6 +381,36 @@ export default function App() {
     };
   };
 
+  // --- LOGICA PARA FILTRAR EL HISTORIAL ---
+  const filtrarPorTiempo = (fechaIso) => {
+    if (filtroTiempo === 'todos') return true;
+    const fecha = new Date(fechaIso);
+    const hoy = new Date();
+
+    if (filtroTiempo === 'hoy') {
+      return fecha.getDate() === hoy.getDate() && fecha.getMonth() === hoy.getMonth() && fecha.getFullYear() === hoy.getFullYear();
+    }
+    if (filtroTiempo === 'semana') {
+      const inicioSemana = new Date(hoy);
+      inicioSemana.setDate(hoy.getDate() - hoy.getDay());
+      inicioSemana.setHours(0,0,0,0);
+      const finSemana = new Date(inicioSemana);
+      finSemana.setDate(inicioSemana.getDate() + 6);
+      finSemana.setHours(23,59,59,999);
+      return fecha >= inicioSemana && fecha <= finSemana;
+    }
+    if (filtroTiempo === 'mes') {
+      return fecha.getMonth() === hoy.getMonth() && fecha.getFullYear() === hoy.getFullYear();
+    }
+    if (filtroTiempo === 'ano') {
+      return fecha.getFullYear().toString() === filtroAno;
+    }
+    return true;
+  };
+
+  const cierresFiltrados = cierres.filter(c => filtrarPorTiempo(c.fecha));
+  const deduccionesFiltradas = deducciones.filter(d => filtrarPorTiempo(d.fecha));
+
   const formatoUSD = (valor) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(valor);
   const formatoBs = (valor) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(valor) + ' Bs.';
 
@@ -394,9 +423,54 @@ export default function App() {
     );
   }
 
+  // --- LOGICA PARA FILTRAR EL DASHBOARD ---
+  const filtrarFilaDashboard = (fila) => {
+    if (filtroDashboard === 'todos') return true;
+    
+    const filaFechaStr = formatInputDate(fila.fecha);
+    const [año, mes, dia] = filaFechaStr.split('-').map(Number);
+    const f = new Date(año, mes - 1, dia); // Evita problemas de zona horaria
+    const ref = fechaCalendario;
+    const hoy = new Date();
+
+    if (filtroDashboard === 'hoy') {
+      return f.getDate() === hoy.getDate() && f.getMonth() === hoy.getMonth() && f.getFullYear() === hoy.getFullYear();
+    }
+    if (filtroDashboard === 'dia') {
+      return f.getDate() === ref.getDate() && f.getMonth() === ref.getMonth() && f.getFullYear() === ref.getFullYear();
+    }
+    if (filtroDashboard === 'semana') {
+      const inicio = new Date(ref);
+      inicio.setDate(ref.getDate() - ref.getDay());
+      inicio.setHours(0,0,0,0);
+      const fin = new Date(inicio);
+      fin.setDate(inicio.getDate() + 6);
+      fin.setHours(23,59,59,999);
+      return f >= inicio && f <= fin;
+    }
+    if (filtroDashboard === 'mes') {
+      return f.getMonth() === ref.getMonth() && f.getFullYear() === ref.getFullYear();
+    }
+    if (filtroDashboard === 'ano') {
+      return f.getFullYear() === ref.getFullYear();
+    }
+    return true;
+  };
+
   // --- 8. RENDERIZADO DEL DASHBOARD ---
   const renderTablas = (datosAUsar, esSoloLectura = false) => {
-    const registrosActuales = datosAUsar[pestanaActiva] || [];
+    const registrosActualesBase = datosAUsar[pestanaActiva] || [];
+    const todasLasFilasGlobalesBase = Object.values(datosAUsar).flat();
+    
+    let registrosActuales = registrosActualesBase;
+    let todasLasFilasGlobales = todasLasFilasGlobalesBase;
+    let deduccionesActuales = deducciones;
+
+    if (!esSoloLectura && filtroDashboard !== 'todos') {
+      registrosActuales = registrosActualesBase.filter(filtrarFilaDashboard);
+      todasLasFilasGlobales = todasLasFilasGlobalesBase.filter(filtrarFilaDashboard);
+      deduccionesActuales = deducciones.filter(filtrarFilaDashboard);
+    }
 
     // Resumen individual (por pestaña activa)
     const resumen = registrosActuales.reduce((acc, curr) => {
@@ -407,15 +481,13 @@ export default function App() {
       acc.totalReinvUSD += calc.reinv;
       acc.totalReinvBs += calc.reinvBs; 
 
-      // Sumamos el sueldo del 20% para el Pago Semanal
       acc.pagoSemanalUSD += calc.sueldo;
       acc.pagoSemanalBs += calc.sueldoBs;
-
       return acc;
     }, { totalIngresosUSD: 0, totalIngresosBs: 0, totalReinvUSD: 0, totalReinvBs: 0, pagoSemanalUSD: 0, pagoSemanalBs: 0 });
 
-    // Resumen GLOBAL para los bancos (todas las pestañas)
-    const resumenGlobal = Object.values(datosAUsar).flat().reduce((acc, curr) => {
+    // Resumen GLOBAL
+    const resumenGlobal = todasLasFilasGlobales.reduce((acc, curr) => {
       const calc = calcularValores(curr);
       acc.banescoSueldoBs += calc.sueldoBs;
       acc.banescoDuenasBs += calc.duenasTotalBs;
@@ -426,12 +498,18 @@ export default function App() {
     }, { banescoBs: 0, banescoSueldoBs: 0, banescoDuenasBs: 0, tesoroBs: 0, provincialBs: 0 });
 
     if (!esSoloLectura) {
-      deducciones.forEach(d => {
+      deduccionesActuales.forEach(d => {
         if (d.banco === 'Banesco') resumenGlobal.banescoBs -= d.monto;
         if (d.banco === 'Banco del Tesoro') resumenGlobal.tesoroBs -= d.monto;
         if (d.banco === 'Provincial') resumenGlobal.provincialBs -= d.monto;
       });
     }
+
+    // Función para ver cuántos pedidos hubo en un día específico para dibujar en el calendario
+    const getOrdenesDia = (day) => {
+      const cellDateStr = `${fechaCalendario.getFullYear()}-${String(fechaCalendario.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      return todasLasFilasGlobalesBase.filter(f => formatInputDate(f.fecha) === cellDateStr && f.cliente && f.cliente.trim() !== '');
+    };
 
     return (
       <>
@@ -555,6 +633,7 @@ export default function App() {
               <table className="w-full text-sm text-left">
                 <thead className="text-xs text-gray-500 bg-gray-50 uppercase border-b">
                   <tr>
+                    <th className="px-4 py-3">Fecha</th>
                     <th className="px-4 py-3">Cliente</th>
                     <th className="px-4 py-3">Pago 1 ($)</th>
                     <th className="px-4 py-3">Pago 2 ($)</th>
@@ -575,6 +654,15 @@ export default function App() {
                     const { saldoBaseUSD, sueldo, ahorro, duenasTotal, porDuena } = calcularValores(fila);
                     return (
                       <tr key={fila.id} className="border-b hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-2">
+                          <input 
+                            type="date" 
+                            disabled={esSoloLectura} 
+                            className={`w-32 p-2 border border-gray-300 rounded outline-none text-xs font-medium ${esSoloLectura ? 'bg-transparent border-transparent' : 'focus:ring-2 focus:ring-indigo-500'}`} 
+                            value={formatInputDate(fila.fecha)} 
+                            onChange={(e) => actualizarRegistro(pestanaActiva, fila.id, 'fecha', e.target.value)} 
+                          />
+                        </td>
                         <td className="px-4 py-2">
                           <input type="text" disabled={esSoloLectura} className={`w-full p-2 border border-gray-300 rounded outline-none ${esSoloLectura ? 'bg-transparent border-transparent' : 'focus:ring-2 focus:ring-indigo-500'}`} placeholder="Nombre..." value={fila.cliente} onChange={(e) => actualizarRegistro(pestanaActiva, fila.id, 'cliente', e.target.value)} />
                         </td>
@@ -618,7 +706,7 @@ export default function App() {
                     );
                   })}
                   {!esSoloLectura && registrosActuales.length === 0 && (
-                    <tr><td colSpan="13" className="text-center py-8 text-gray-500">No hay registros.</td></tr>
+                    <tr><td colSpan="14" className="text-center py-8 text-gray-500">No hay registros.</td></tr>
                   )}
                 </tbody>
               </table>
@@ -638,6 +726,7 @@ export default function App() {
               <table className="w-full text-sm text-left">
                 <thead className="text-xs text-gray-500 bg-gray-50 uppercase border-b">
                   <tr>
+                    <th className="px-4 py-3">Fecha</th>
                     <th className="px-4 py-3">Cliente</th>
                     <th className="px-4 py-3">Pago 1 (Bs)</th>
                     <th className="px-4 py-3">Pago 2 (Bs)</th>
@@ -662,7 +751,12 @@ export default function App() {
                     
                     return (
                       <tr key={`bs-${fila.id}`} className="border-b bg-white hover:bg-emerald-50/30 transition-colors">
-                        <td className="px-4 py-4 font-medium text-gray-700">{fila.cliente || <span className="text-gray-400 italic">Sin nombre</span>}</td>
+                        <td className="px-4 py-4 text-gray-500 font-medium">
+                          {formatInputDate(fila.fecha).split('-').reverse().join('/')}
+                        </td>
+                        <td className="px-4 py-4 font-medium text-gray-700">
+                          {fila.cliente || <span className="text-gray-400 italic">Sin nombre</span>}
+                        </td>
                         <td className="px-4 py-4 text-gray-600">
                           {pago1Bs > 0 ? formatoBs(pago1Bs) : (p1 > 0 && t1 === 0 ? <span className="text-orange-400 text-xs italic">Falta Tasa 1</span> : '-')}
                         </td>
@@ -691,6 +785,111 @@ export default function App() {
               </table>
             </div>
           </div>
+
+          {/* CALENDARIO Y FILTROS DEL DASHBOARD */}
+          {!esSoloLectura && (
+            <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-200 w-full relative overflow-hidden mt-4">
+              <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-indigo-500"></div>
+              
+              <div className="flex flex-wrap items-center gap-2 mb-4 pl-3 border-b border-gray-100 pb-4">
+                <span className="text-sm font-medium text-gray-500 mr-2 flex items-center gap-1"><Calendar className="w-4 h-4"/> Filtrar Panel:</span>
+                <button onClick={() => setFiltroDashboard('todos')} className={`px-3 py-1.5 text-xs font-bold rounded-full transition-all ${filtroDashboard === 'todos' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Todos</button>
+                <button onClick={() => { setFiltroDashboard('hoy'); setFechaCalendario(new Date()); }} className={`px-3 py-1.5 text-xs font-bold rounded-full transition-all ${filtroDashboard === 'hoy' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Hoy</button>
+                <button onClick={() => setFiltroDashboard('semana')} className={`px-3 py-1.5 text-xs font-bold rounded-full transition-all ${filtroDashboard === 'semana' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Semana</button>
+                <button onClick={() => setFiltroDashboard('mes')} className={`px-3 py-1.5 text-xs font-bold rounded-full transition-all ${filtroDashboard === 'mes' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Mes</button>
+                <button onClick={() => setFiltroDashboard('ano')} className={`px-3 py-1.5 text-xs font-bold rounded-full transition-all ${filtroDashboard === 'ano' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Año</button>
+              </div>
+
+              <div className="flex items-center justify-between mb-6 pl-3">
+                <div className="flex items-center gap-1 flex-wrap">
+                  <Calendar className="w-6 h-6 text-indigo-500 mr-1" />
+                  <select
+                    value={fechaCalendario.getMonth()}
+                    onChange={(e) => setFechaCalendario(new Date(fechaCalendario.getFullYear(), parseInt(e.target.value), 1))}
+                    className="text-xl font-bold text-slate-800 bg-transparent outline-none cursor-pointer hover:text-indigo-600 transition-colors capitalize appearance-none px-1"
+                    title="Seleccionar Mes"
+                  >
+                    {['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'].map((mes, index) => (
+                      <option key={mes} value={index} className="text-base text-slate-800 capitalize">{mes}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={fechaCalendario.getFullYear()}
+                    onChange={(e) => setFechaCalendario(new Date(parseInt(e.target.value), fechaCalendario.getMonth(), 1))}
+                    className="text-xl font-bold text-slate-800 bg-transparent outline-none cursor-pointer hover:text-indigo-600 transition-colors appearance-none px-1"
+                    title="Seleccionar Año"
+                  >
+                    {Array.from({ length: 46 }, (_, i) => new Date().getFullYear() - 5 + i).map(year => (
+                      <option key={year} value={year} className="text-base text-slate-800">{year}</option>
+                    ))}
+                  </select>
+                  {filtroDashboard !== 'todos' && <span className="text-[10px] bg-orange-100 text-orange-600 px-2 py-0.5 rounded-full normal-case ml-2">Filtro Activo</span>}
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setFechaCalendario(new Date(fechaCalendario.getFullYear(), fechaCalendario.getMonth() - 1, 1))} className="p-2 hover:bg-gray-100 rounded-md text-gray-500 transition-colors"><ChevronLeft className="w-6 h-6"/></button>
+                  <button onClick={() => setFechaCalendario(new Date(fechaCalendario.getFullYear(), fechaCalendario.getMonth() + 1, 1))} className="p-2 hover:bg-gray-100 rounded-md text-gray-500 transition-colors"><ChevronRight className="w-6 h-6"/></button>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-7 gap-2 sm:gap-4 text-center mb-2 pl-3">
+                {['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'].map(d => (
+                  <div key={d} className="text-[10px] sm:text-sm font-bold text-gray-400 uppercase tracking-wider">
+                    <span className="hidden sm:inline">{d}</span>
+                    <span className="sm:hidden">{d.substring(0, 2)}</span>
+                  </div>
+                ))}
+              </div>
+              
+              <div className="grid grid-cols-7 gap-2 sm:gap-4 text-center pl-3">
+                {/* Celdas vacías al inicio del mes */}
+                {Array.from({ length: new Date(fechaCalendario.getFullYear(), fechaCalendario.getMonth(), 1).getDay() }).map((_, i) => (
+                  <div key={`empty-${i}`} className="h-16 sm:h-24"></div>
+                ))}
+                
+                {/* Días del mes con diseño responsivo e interactivo */}
+                {Array.from({ length: new Date(fechaCalendario.getFullYear(), fechaCalendario.getMonth() + 1, 0).getDate() }).map((_, i) => {
+                  const day = i + 1;
+                  const isToday = new Date().getDate() === day && new Date().getMonth() === fechaCalendario.getMonth() && new Date().getFullYear() === fechaCalendario.getFullYear();
+                  const isSelected = filtroDashboard === 'dia' && fechaCalendario.getDate() === day;
+                  
+                  // Buscar pedidos de ese día para dibujar en el calendario
+                  const ordenesDelDia = getOrdenesDia(day);
+
+                  return (
+                    <button 
+                      key={day} 
+                      type="button"
+                      onClick={() => {
+                        const selectedDate = new Date(fechaCalendario.getFullYear(), fechaCalendario.getMonth(), day);
+                        setFechaCalendario(selectedDate);
+                        setFiltroDashboard('dia');
+                        setDiaSeleccionadoDetalle(selectedDate); // Abre el modal con los detalles
+                      }}
+                      className={`relative py-1 sm:py-2 px-1 rounded-lg text-sm sm:text-base flex flex-col items-center justify-start h-16 sm:h-24 transition-colors border outline-none 
+                        ${isSelected ? 'bg-indigo-600 border-indigo-600 text-white font-bold shadow-md' : 
+                          isToday ? 'bg-indigo-50 border-indigo-200 text-indigo-700 font-bold' : 
+                          'border-transparent text-gray-700 hover:bg-gray-100 hover:border-gray-200'}`}
+                    >
+                      <span className="z-10">{day}</span>
+                      
+                      {/* Detalles del Pedido dentro del calendario */}
+                      {ordenesDelDia.length > 0 && (
+                        <div className="mt-1 flex flex-col items-center w-full overflow-hidden">
+                          <span className={`text-[9px] sm:text-xs px-1.5 py-0.5 rounded shadow-sm w-full truncate font-bold ${isSelected ? 'bg-white text-indigo-700' : 'bg-indigo-500 text-white'}`}>
+                            {ordenesDelDia.length} Pedido{ordenesDelDia.length !== 1 ? 's' : ''}
+                          </span>
+                          <span className={`hidden sm:block text-[9px] truncate w-full mt-0.5 font-medium px-1 ${isSelected ? 'text-indigo-100' : 'text-gray-500'}`}>
+                            {ordenesDelDia.map(o => o.cliente).join(', ')}
+                          </span>
+                        </div>
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
         </div>
       </>
     );
@@ -701,7 +900,7 @@ export default function App() {
       
       {/* NAVEGACIÓN SUPERIOR */}
       <nav className="bg-slate-800 text-white shadow-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="w-full px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-2">
               <Calculator className="w-6 h-6 text-indigo-400" />
@@ -731,7 +930,7 @@ export default function App() {
         </div>
       </nav>
 
-      <div className="max-w-7xl mx-auto p-4 sm:p-6 md:p-8">
+      <div className="w-full p-4 sm:p-6 md:p-8">
         
         {/* --- VISTA: DASHBOARD PRINCIPAL --- */}
         {vista === 'dashboard' && (
@@ -784,17 +983,40 @@ export default function App() {
               </div>
             </header>
 
+            {/* --- FILTROS DE TIEMPO --- */}
+            <div className="flex flex-wrap items-center gap-2 mb-6 bg-white p-3 rounded-xl border border-gray-200 shadow-sm">
+              <span className="text-sm font-medium text-gray-500 mr-2 flex items-center gap-1"><Calendar className="w-4 h-4"/> Filtrar:</span>
+              <button onClick={() => setFiltroTiempo('todos')} className={`px-4 py-1.5 text-xs font-bold rounded-full transition-all ${filtroTiempo === 'todos' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Todos</button>
+              <button onClick={() => setFiltroTiempo('hoy')} className={`px-4 py-1.5 text-xs font-bold rounded-full transition-all ${filtroTiempo === 'hoy' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Hoy</button>
+              <button onClick={() => setFiltroTiempo('semana')} className={`px-4 py-1.5 text-xs font-bold rounded-full transition-all ${filtroTiempo === 'semana' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Esta Semana</button>
+              <button onClick={() => setFiltroTiempo('mes')} className={`px-4 py-1.5 text-xs font-bold rounded-full transition-all ${filtroTiempo === 'mes' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Este Mes</button>
+              
+              <div className="flex items-center gap-2 ml-auto w-full sm:w-auto mt-2 sm:mt-0">
+                <button onClick={() => setFiltroTiempo('ano')} className={`px-4 py-1.5 text-xs font-bold rounded-full transition-all ${filtroTiempo === 'ano' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>Por Año:</button>
+                <select 
+                  className="text-xs font-bold border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 py-1.5 px-3 bg-gray-50 cursor-pointer"
+                  value={filtroAno}
+                  onChange={(e) => { setFiltroAno(e.target.value); setFiltroTiempo('ano'); }}
+                >
+                  {Array.from({ length: 10 }).map((_, i) => {
+                    const year = new Date().getFullYear() - i;
+                    return <option key={year} value={year}>{year}</option>
+                  })}
+                </select>
+              </div>
+            </div>
+
             {subVistaHistorial === 'cierres' && (
               <>
-                {cierres.length === 0 ? (
+                {cierresFiltrados.length === 0 ? (
                   <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">
                     <History className="w-12 h-12 mx-auto text-gray-300 mb-4" />
-                    <h3 className="text-lg font-medium text-gray-900 mb-1">No hay cierres guardados</h3>
-                    <p>Ve al Panel de Trabajo y haz clic en "Realizar Cierre" para guardar tu primera semana.</p>
+                    <h3 className="text-lg font-medium text-gray-900 mb-1">No hay cierres para este periodo</h3>
+                    <p>Prueba cambiando el filtro de fecha o ve al Panel de Trabajo para guardar uno nuevo.</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {cierres.map(cierre => (
+                    {cierresFiltrados.map(cierre => (
                       <div key={cierre.id} className="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow overflow-hidden">
                         <div className="bg-indigo-50 border-b border-indigo-100 p-4">
                           <h3 className="text-lg font-bold text-indigo-900 flex items-center justify-between">
@@ -853,7 +1075,7 @@ export default function App() {
                       </tr>
                     </thead>
                     <tbody>
-                      {deducciones.map(d => (
+                      {deduccionesFiltradas.map(d => (
                         <tr key={d.id} className="border-b hover:bg-gray-50">
                           <td className="px-4 py-3 text-gray-600">{new Date(d.fecha).toLocaleDateString('es-VE')}</td>
                           <td className="px-4 py-3 font-semibold text-gray-800">{d.banco}</td>
@@ -864,8 +1086,8 @@ export default function App() {
                           </td>
                         </tr>
                       ))}
-                      {deducciones.length === 0 && (
-                        <tr><td colSpan="5" className="text-center py-8 text-gray-500">No hay deducciones registradas.</td></tr>
+                      {deduccionesFiltradas.length === 0 && (
+                        <tr><td colSpan="5" className="text-center py-8 text-gray-500">No hay deducciones registradas para este periodo.</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -1132,6 +1354,96 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* --- MODAL DETALLES DEL DÍA (NUEVO) --- */}
+      {diaSeleccionadoDetalle && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-4xl p-6 animate-in fade-in zoom-in duration-200 max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center mb-6 pb-4 border-b border-gray-100">
+              <div className="flex items-center gap-3 text-indigo-600">
+                <Calendar className="w-8 h-8" />
+                <h2 className="text-xl sm:text-2xl font-bold capitalize">
+                  {diaSeleccionadoDetalle.toLocaleDateString('es-VE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+                </h2>
+              </div>
+              <button onClick={() => setDiaSeleccionadoDetalle(null)} className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-colors">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto flex-1 pr-2">
+              {(() => {
+                const dateStr = `${diaSeleccionadoDetalle.getFullYear()}-${String(diaSeleccionadoDetalle.getMonth() + 1).padStart(2, '0')}-${String(diaSeleccionadoDetalle.getDate()).padStart(2, '0')}`;
+                const ordenesModal = [];
+                
+                Object.keys(datos).forEach(persona => {
+                  datos[persona].forEach(fila => {
+                    if (formatInputDate(fila.fecha) === dateStr && fila.cliente && fila.cliente.trim() !== '') {
+                      const calc = calcularValores(fila);
+                      ordenesModal.push({ persona, fila, calc });
+                    }
+                  });
+                });
+
+                if (ordenesModal.length === 0) {
+                  return (
+                    <div className="text-center py-12 text-gray-500">
+                      <Package className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+                      <p className="text-lg font-medium">No hay pedidos registrados en esta fecha.</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="space-y-4">
+                    {ordenesModal.map((orden, index) => {
+                      const faltaT1 = orden.calc.p1 > 0 && orden.calc.t1 === 0;
+                      const faltaT2 = orden.calc.p2 > 0 && orden.calc.t2 === 0;
+                      const estaPagadoCompleto = !faltaT1 && !faltaT2 && orden.calc.totalPagadoUSD > 0;
+
+                      return (
+                        <div key={index} className="bg-gray-50 border border-gray-200 rounded-xl p-4 flex flex-col sm:flex-row gap-4 justify-between items-start sm:items-center hover:shadow-sm transition-shadow">
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider">{orden.persona}</span>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase tracking-wider ${orden.fila.entregado === 'Sí' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                                {orden.fila.entregado === 'Sí' ? 'Entregado' : 'No Entregado'}
+                              </span>
+                            </div>
+                            <h3 className="text-lg font-bold text-gray-800">{orden.fila.cliente}</h3>
+                            <div className="text-sm text-gray-500 mt-1 flex gap-3">
+                              <span>Pago 1: <strong className="text-gray-700">{formatoUSD(orden.calc.p1)}</strong></span>
+                              <span>Pago 2: <strong className="text-gray-700">{formatoUSD(orden.calc.p2)}</strong></span>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-4 w-full sm:w-auto justify-between sm:justify-end border-t sm:border-t-0 border-gray-200 pt-3 sm:pt-0">
+                            <div className="text-right">
+                              <p className="text-xs text-gray-500 mb-0.5">Total Dólares</p>
+                              <p className="font-bold text-lg text-gray-800">{formatoUSD(orden.calc.totalPagadoUSD)}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xs text-gray-500 mb-0.5">Total Bolívares</p>
+                              <p className="font-bold text-lg text-emerald-600">{formatoBs(orden.calc.totalBs)}</p>
+                            </div>
+                            <div className="ml-2">
+                              {orden.calc.totalPagadoUSD === 0 ? '-' : (estaPagadoCompleto ? 
+                                <span className="bg-green-500 text-white p-2 rounded-lg flex items-center justify-center shadow-sm" title="Pagado Completo"><Wallet className="w-5 h-5"/></span> : 
+                                <span className="bg-orange-500 text-white p-2 rounded-lg flex items-center justify-center shadow-sm" title="Pago Pendiente"><Loader2 className="w-5 h-5"/></span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
